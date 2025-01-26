@@ -739,12 +739,15 @@ void AboutDialog::copyToClipboard()
     PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
 
     // https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
+
+    Base::Console().Warning("IfcOpenShell: pre-check\n");
+    
     if (ifcopenshellVer) {
         // Mimic Python's `repr()` function with `PyObject_Repr`,
         // or alternatively `PyObject_Str` for `str()`. 
-        ////PyObject* repr = PyObject_Repr(ifcopenshellVer);
+        //PyObject* repr = PyObject_Repr(ifcopenshellVer);
         // Now call PyString_AsString to get char *
-        //const char* ifcopenshellVerAsStr = PyString_AsString(repr); /* No longer available in Python 3? */
+        //const char* ifcopenshellVerAsStr = PyString_AsString(repr); // No longer available in Python 3
 
         // For Python 3, use PyUnicode_AsEncodedString to get a bytes object
         // PyObject* str = PyUnicode_AsEncodedString(repr, "utf-8", "~E~");
@@ -753,16 +756,23 @@ void AboutDialog::copyToClipboard()
         // For Python 3, use PyUnicode_AsUTF8 to get a char *
         // https://stackoverflow.com/questions/22487780/what-do-i-use-instead-of-pystring-asstring-when-loading-a-python-module-in-3-3
         // const char* my_result = PyUnicode_AsUTF8(result); 
-
-        PyObject* unicode = PyUnicode_AsEncodedString(ifcopenshellVer, "utf-8", nullptr);
-        if (unicode) {
-            const char* ifcopenshellVerAsStr = PyBytes_AsString(unicode);
+        Base::Console().Message("IfcOpenShell: pre-unicode conversion\n");
+        
+        // PyObject* unicode = PyUnicode_AsEncodedString(ifcopenshellVer, "utf-8", nullptr);
+        const char* ifcopenshellVerAsStr = PyUnicode_AsUTF8(ifcopenshellVer);
+        Base::Console().Log("IfcOpenShell: post-unicode conversion\n");
+        //Base::Console().Message("IfcOpenShell: %s\n", PyBytes_AsString(unicode));
+        
+        if (ifcopenshellVerAsStr) {
+            //const char* ifcopenshellVerAsStr = PyBytes_AsString(unicode);
             str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
-            Py_XDECREF(unicode);
+            //Py_XDECREF(unicode);
             Py_XDECREF(ifcopenshellVerAsStr);
         }
+        //Py_XDECREF(repr);
         Py_XDECREF(ifcopenshellVer);
     }
+
     
 #if defined(HAVE_OCC_VERSION)
     str << "OCC " << OCC_VERSION_MAJOR << "." << OCC_VERSION_MINOR << "." << OCC_VERSION_MAINTENANCE
