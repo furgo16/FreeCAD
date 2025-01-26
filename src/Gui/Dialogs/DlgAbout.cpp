@@ -658,10 +658,10 @@ void AboutDialog::copyToClipboard()
     std::stringstream cmd;
     cmd << "import ifcopenshell\n";
     cmd << "version = ifcopenshell.version";
-    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");    
+    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
     if (ifcopenshellVer) {
         const char* ifcopenshellVerAsStr = PyUnicode_AsUTF8(ifcopenshellVer);
-        
+
         if (ifcopenshellVerAsStr) {
             str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
             Py_XDECREF(ifcopenshellVerAsStr);
