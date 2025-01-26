@@ -45,6 +45,8 @@
 #include <App/Application.h>
 #include <App/Metadata.h>
 #include <Base/Console.h>
+#include <Base/Interpreter.h>
+#include <Base/swigpyrun.h>
 #include <CXX/WrapPython.h>
 
 #include <boost/filesystem.hpp>
@@ -647,11 +649,110 @@ void AboutDialog::copyToClipboard()
     if (it != config.end()) {
         str << "Hash: " << QString::fromStdString(it->second) << '\n';
     }
+
+    std::stringstream cmd;
+    cmd << "import ifcopenshell\n";
+    cmd << "version = ifcopenshell.version";
+    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
+
+    //PyObject* objectsRepresentation = PyObject_Repr(ifcopenshellVer);
+	//const char* ifcopenshellVerAsStr = PyString_AsString(objectsRepresentation);
+
+    /*if (ifcopenshellVer) {
+        str << "IfcOpenShell: " << PyString_AsString(ifcopenshellVer) << '\n';
+    }*/
+
+
+   /*
+
+    /////////////////////////////////////////////////
+
+     status = PP_Run_Codestr(PP_EXPRESSION, 
+                           "func(4, 8)", "pkgdir.testapi", "i", &result);
+
+    /////////////////////////////////////////////////
+
+    PP_Run_Codestr(PP_EXPRESSION, "sys", NULL, "O", &pobject1);
+
+    ///////////////////////////////////////////////
+
+    PP_Run_Codestr(PP_STATEMENT, 
+        "print 'changed sys.version =>', sys.version", NULL, "", NULL);
+
+    ///////////////////////////////////////////////////
+
+    // Returns 0 on success or -1 if an exception was raised
+
+    status = PP_Run_Codestr(PP_EXPRESSION, 
+                           "func(4, 8)", "testapi", "i", &result);
+
+    ///////////////////////////////////////////////////
+
+    PP_Run_Codestr(PP_EXPRESSION, "sys", NULL, "O", &pobject1);
+
+    ////////////////////////////////////////////
+
+    PP_Run_Codestr(PP_STATEMENT, 
+        "print 'changed sys.version =>', sys.version", NULL, "", NULL);
+
+    ///////////////////////////////////////////////////
+    char *cstr;
+    int err = PP_Run_Codestr(PP_EXPRESSION,
+                             "upper('spam') + '!'", "string",
+                             "s", &cstr);
+    printf("%s\n", (!err) ? cstr : "Can't run string"); // and free(cstr)
+
+    ///////////////////////////////////////////////////
+
+    status = PP_Run_Codestr(PP_STATEMENT, script, "orders", "", NULL);
+
+    if (status == -1) {
+        printf("Python error during validation.\n"); 
+        PyErr_Print(); // show traceback
+        continue;
+    }
+
+    // Initialize the Python interpreter
+    Py_Initialize();
+
+    // Define the Python code string
+    const char* code = "print('Hello from Python!')";
+
+    // Call the PP_Run_Codestr function
+    int result = PP_Run_Codestr(code);
+
+    // Check the result
+    if (result == 0) {
+        std::cout << "Python code executed successfully." << std::endl;
+    } else {
+        std::cerr << "Error executing Python code." << std::endl;
+    }
+
+    // Finalize the Python interpreter
+    Py_Finalize();
+
+    */
+
     // report also the version numbers of the most important libraries in FreeCAD
     str << "Python " << PY_VERSION << ", ";
     str << "Qt " << QT_VERSION_STR << ", ";
     str << "Coin " << COIN_VERSION << ", ";
     str << "Vtk " << fcVtkVersion << ", ";
+
+    // https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
+    if (ifcopenshellVer) {
+        PyObject* repr = PyObject_Repr(ifcopenshellVer);
+        const char* ifcopenshellVerAsStr = PyString_AsString(repr);
+
+        // PyObject* str = PyUnicode_AsEncodedString(repr, "utf-8", "~E~");
+        // const char *bytes = PyBytes_AS_STRING(str);
+
+        str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
+
+        Py_XDECREF(repr);
+        Py_XDECREF(ifcopenshellVerAsStr);
+    }
+    
 #if defined(HAVE_OCC_VERSION)
     str << "OCC " << OCC_VERSION_MAJOR << "." << OCC_VERSION_MINOR << "." << OCC_VERSION_MAINTENANCE
 #ifdef OCC_VERSION_DEVELOPMENT
