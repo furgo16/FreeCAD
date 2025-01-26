@@ -46,7 +46,6 @@
 #include <App/Metadata.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
-#include <Base/swigpyrun.h>
 #include <CXX/WrapPython.h>
 
 #include <boost/filesystem.hpp>
@@ -741,16 +740,28 @@ void AboutDialog::copyToClipboard()
 
     // https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
     if (ifcopenshellVer) {
+        // Mimic Python's `repr()` function with `PyObject_Repr`,
+        // or alternatively `PyObject_Str` for `str()`. 
         PyObject* repr = PyObject_Repr(ifcopenshellVer);
-        const char* ifcopenshellVerAsStr = PyString_AsString(repr);
+        // Now call PyString_AsString to get char *
+        //const char* ifcopenshellVerAsStr = PyString_AsString(repr); /* No longer available in Python 3? */
 
+        // For Python 3, use PyUnicode_AsEncodedString to get a bytes object
         // PyObject* str = PyUnicode_AsEncodedString(repr, "utf-8", "~E~");
         // const char *bytes = PyBytes_AS_STRING(str);
 
-        str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
+        // For Python 3, use PyUnicode_AsUTF8 to get a char *
+        // https://stackoverflow.com/questions/22487780/what-do-i-use-instead-of-pystring-asstring-when-loading-a-python-module-in-3-3
+        // const char* my_result = PyUnicode_AsUTF8(result); 
 
+        PyObject* unicode = PyUnicode_AsEncodedString(ifcopenshellVer, "utf-8", nullptr);
+        if (unicode) {
+            const char* ifcopenshellVerAsStr = PyBytes_AsString(unicode);
+            str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
+            Py_DECREF(unicode);
+            Py_XDECREF(ifcopenshellVerAsStr);
+        }
         Py_XDECREF(repr);
-        Py_XDECREF(ifcopenshellVerAsStr);
     }
     
 #if defined(HAVE_OCC_VERSION)
