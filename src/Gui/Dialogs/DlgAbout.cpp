@@ -649,11 +649,6 @@ void AboutDialog::copyToClipboard()
         str << "Hash: " << QString::fromStdString(it->second) << '\n';
     }
 
-    std::stringstream cmd;
-    cmd << "import ifcopenshell\n";
-    cmd << "version = ifcopenshell.version";
-    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
-
     //PyObject* objectsRepresentation = PyObject_Repr(ifcopenshellVer);
 	//const char* ifcopenshellVerAsStr = PyString_AsString(objectsRepresentation);
 
@@ -738,11 +733,16 @@ void AboutDialog::copyToClipboard()
     str << "Coin " << COIN_VERSION << ", ";
     str << "Vtk " << fcVtkVersion << ", ";
 
+    std::stringstream cmd;
+    cmd << "import ifcopenshell\n";
+    cmd << "version = ifcopenshell.version";
+    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
+
     // https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
     if (ifcopenshellVer) {
         // Mimic Python's `repr()` function with `PyObject_Repr`,
         // or alternatively `PyObject_Str` for `str()`. 
-        PyObject* repr = PyObject_Repr(ifcopenshellVer);
+        ////PyObject* repr = PyObject_Repr(ifcopenshellVer);
         // Now call PyString_AsString to get char *
         //const char* ifcopenshellVerAsStr = PyString_AsString(repr); /* No longer available in Python 3? */
 
@@ -758,10 +758,10 @@ void AboutDialog::copyToClipboard()
         if (unicode) {
             const char* ifcopenshellVerAsStr = PyBytes_AsString(unicode);
             str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
-            Py_DECREF(unicode);
+            Py_XDECREF(unicode);
             Py_XDECREF(ifcopenshellVerAsStr);
         }
-        Py_XDECREF(repr);
+        Py_XDECREF(ifcopenshellVer);
     }
     
 #if defined(HAVE_OCC_VERSION)
