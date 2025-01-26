@@ -649,84 +649,6 @@ void AboutDialog::copyToClipboard()
         str << "Hash: " << QString::fromStdString(it->second) << '\n';
     }
 
-    //PyObject* objectsRepresentation = PyObject_Repr(ifcopenshellVer);
-	//const char* ifcopenshellVerAsStr = PyString_AsString(objectsRepresentation);
-
-    /*if (ifcopenshellVer) {
-        str << "IfcOpenShell: " << PyString_AsString(ifcopenshellVer) << '\n';
-    }*/
-
-
-   /*
-
-    /////////////////////////////////////////////////
-
-     status = PP_Run_Codestr(PP_EXPRESSION, 
-                           "func(4, 8)", "pkgdir.testapi", "i", &result);
-
-    /////////////////////////////////////////////////
-
-    PP_Run_Codestr(PP_EXPRESSION, "sys", NULL, "O", &pobject1);
-
-    ///////////////////////////////////////////////
-
-    PP_Run_Codestr(PP_STATEMENT, 
-        "print 'changed sys.version =>', sys.version", NULL, "", NULL);
-
-    ///////////////////////////////////////////////////
-
-    // Returns 0 on success or -1 if an exception was raised
-
-    status = PP_Run_Codestr(PP_EXPRESSION, 
-                           "func(4, 8)", "testapi", "i", &result);
-
-    ///////////////////////////////////////////////////
-
-    PP_Run_Codestr(PP_EXPRESSION, "sys", NULL, "O", &pobject1);
-
-    ////////////////////////////////////////////
-
-    PP_Run_Codestr(PP_STATEMENT, 
-        "print 'changed sys.version =>', sys.version", NULL, "", NULL);
-
-    ///////////////////////////////////////////////////
-    char *cstr;
-    int err = PP_Run_Codestr(PP_EXPRESSION,
-                             "upper('spam') + '!'", "string",
-                             "s", &cstr);
-    printf("%s\n", (!err) ? cstr : "Can't run string"); // and free(cstr)
-
-    ///////////////////////////////////////////////////
-
-    status = PP_Run_Codestr(PP_STATEMENT, script, "orders", "", NULL);
-
-    if (status == -1) {
-        printf("Python error during validation.\n"); 
-        PyErr_Print(); // show traceback
-        continue;
-    }
-
-    // Initialize the Python interpreter
-    Py_Initialize();
-
-    // Define the Python code string
-    const char* code = "print('Hello from Python!')";
-
-    // Call the PP_Run_Codestr function
-    int result = PP_Run_Codestr(code);
-
-    // Check the result
-    if (result == 0) {
-        std::cout << "Python code executed successfully." << std::endl;
-    } else {
-        std::cerr << "Error executing Python code." << std::endl;
-    }
-
-    // Finalize the Python interpreter
-    Py_Finalize();
-
-    */
-
     // report also the version numbers of the most important libraries in FreeCAD
     str << "Python " << PY_VERSION << ", ";
     str << "Qt " << QT_VERSION_STR << ", ";
@@ -736,44 +658,17 @@ void AboutDialog::copyToClipboard()
     std::stringstream cmd;
     cmd << "import ifcopenshell\n";
     cmd << "version = ifcopenshell.version";
-    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");
-
-    // https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
-
-    Base::Console().Warning("IfcOpenShell: pre-check\n");
-    
+    PyObject * ifcopenshellVer = Base::Interpreter().getValue(cmd.str().c_str(), "version");    
     if (ifcopenshellVer) {
-        // Mimic Python's `repr()` function with `PyObject_Repr`,
-        // or alternatively `PyObject_Str` for `str()`. 
-        //PyObject* repr = PyObject_Repr(ifcopenshellVer);
-        // Now call PyString_AsString to get char *
-        //const char* ifcopenshellVerAsStr = PyString_AsString(repr); // No longer available in Python 3
-
-        // For Python 3, use PyUnicode_AsEncodedString to get a bytes object
-        // PyObject* str = PyUnicode_AsEncodedString(repr, "utf-8", "~E~");
-        // const char *bytes = PyBytes_AS_STRING(str);
-
-        // For Python 3, use PyUnicode_AsUTF8 to get a char *
-        // https://stackoverflow.com/questions/22487780/what-do-i-use-instead-of-pystring-asstring-when-loading-a-python-module-in-3-3
-        // const char* my_result = PyUnicode_AsUTF8(result); 
-        Base::Console().Message("IfcOpenShell: pre-unicode conversion\n");
-        
-        // PyObject* unicode = PyUnicode_AsEncodedString(ifcopenshellVer, "utf-8", nullptr);
         const char* ifcopenshellVerAsStr = PyUnicode_AsUTF8(ifcopenshellVer);
-        Base::Console().Log("IfcOpenShell: post-unicode conversion\n");
-        //Base::Console().Message("IfcOpenShell: %s\n", PyBytes_AsString(unicode));
         
         if (ifcopenshellVerAsStr) {
-            //const char* ifcopenshellVerAsStr = PyBytes_AsString(unicode);
             str << "IfcOpenShell: " << ifcopenshellVerAsStr << ", "; // << '\n';
-            //Py_XDECREF(unicode);
             Py_XDECREF(ifcopenshellVerAsStr);
         }
-        //Py_XDECREF(repr);
-        Py_XDECREF(ifcopenshellVer);
+        Py_DECREF(ifcopenshellVer);
     }
 
-    
 #if defined(HAVE_OCC_VERSION)
     str << "OCC " << OCC_VERSION_MAJOR << "." << OCC_VERSION_MINOR << "." << OCC_VERSION_MAINTENANCE
 #ifdef OCC_VERSION_DEVELOPMENT
