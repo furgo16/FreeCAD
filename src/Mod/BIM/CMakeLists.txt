@@ -27,6 +27,7 @@ SET(Arch_SRCS
     ArchSpace.py
     ArchRebar.py
     TestArch.py
+    TestArchGui.py
     ArchFrame.py
     ArchPanel.py
     ArchEquipment.py
