@@ -54,12 +54,11 @@ class Arch_Space:
         FreeCAD.ActiveDocument.openTransaction(translate("Arch","Create Space"))
         FreeCADGui.addModule("Arch")
         sel = FreeCADGui.Selection.getSelection()
+        print(f"Selection: {sel}")
+        print(f"SelectionEx: {FreeCADGui.Selection.getSelectionEx()}")
         if sel:
             FreeCADGui.Control.closeDialog()
-            if len(sel) == 1:
-                FreeCADGui.doCommand("obj = Arch.makeSpace(FreeCADGui.Selection.getSelection())")
-            else:
-                FreeCADGui.doCommand("obj = Arch.makeSpace(FreeCADGui.Selection.getSelectionEx())")
+            FreeCADGui.doCommand("obj = Arch.makeSpace(FreeCADGui.Selection.getSelectionEx())")
             FreeCADGui.addModule("Draft")
             FreeCADGui.doCommand("Draft.autogroup(obj)")
             FreeCAD.ActiveDocument.commitTransaction()
