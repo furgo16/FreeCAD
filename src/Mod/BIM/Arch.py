@@ -788,22 +788,10 @@ def makeSpace(objects=None,baseobj=None,name=None):
     if objects:
         if not isinstance(objects,list):
             objects = [objects]
-        print(f"Objects list: {objects}")
-        print(f"Objects[0]: {objects[0]}")
-        print(f"Objects[0].SubElementNames: {objects[0].SubElementNames}")
         if len(objects) == 1:
-            if hasattr(objects[0], "SubElementNames"):
-                if len(objects[0].SubElementNames) <= 1:
-                    obj.Base = objects[0].Object
-                    if FreeCAD.GuiUp:
-                        objects[0].Object.ViewObject.hide()
-                else:
-                    obj.Proxy.addSubobjects(obj, objects)
-            else:
-                obj.Base = objects[0]
-                if FreeCAD.GuiUp:
-                    objects[0].ViewObject.hide()
-
+            obj.Base = objects[0]
+            if FreeCAD.GuiUp:
+                objects[0].ViewObject.hide()
         else:
             obj.Proxy.addSubobjects(obj,objects)
     return obj
