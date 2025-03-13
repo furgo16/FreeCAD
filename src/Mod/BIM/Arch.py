@@ -788,7 +788,12 @@ def makeSpace(objects=None,baseobj=None,name=None):
     if objects:
         if not isinstance(objects,list):
             objects = [objects]
-        if len(objects) == 1:
+        isSingleObject = len(objects) == 1
+        try:
+            hasBoundaries = objects[0].HasSubObjects
+        except:
+            hasBoundaries = False
+        if isSingleObject and not hasBoundaries:
             obj.Base = objects[0]
             if FreeCAD.GuiUp:
                 objects[0].ViewObject.hide()
