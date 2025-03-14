@@ -836,6 +836,8 @@ class ArchTest(unittest.TestCase):
         App.ActiveDocument.recompute() # To calculate area
 
         # Create a space from the wall's inner faces
+        _msg(f"{operation}: {wall.Shape.Faces}")
+        _msg(f"{operation}: {[f'Face{ind+1}: {face.Area} mm^2' for ind, face in enumerate(wall.Shape.Faces)]}")
         boundaries = [f"Face{ind+1}" for ind, face in enumerate(wall.Shape.Faces)
                       if round(face.Area) == 12000000]
         print(f"{operation}: boundaries are {boundaries}")
