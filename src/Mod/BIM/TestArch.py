@@ -833,9 +833,12 @@ class ArchTest(unittest.TestCase):
         rectangleBase = Draft.make_rectangle(
             length=4000.0, height=4000.0, placement=pl, face=False, support=None)
         wall = Arch.makeWall(rectangleBase)
+        App.ActiveDocument.recompute() # To calculate area
 
         # Create a space from the wall's inner faces
-        boundaries = ['Face8', 'Face7', 'Face6', 'Face5']
+        boundaries = [f"Face{ind+1}" for ind, face in enumerate(wall.Shape.Faces)
+                      if round(face.Area) == 12000000]
+
         if App.GuiUp:
             FreeCADGui.Selection.clearSelection()
             FreeCADGui.Selection.addSelection(wall, boundaries)
