@@ -818,6 +818,49 @@ class ArchTest(unittest.TestCase):
         App.ActiveDocument.recompute()
         assert True
 
+    def test_SpaceFromSingleWall(self):
+        """Create a space from boundaries of a single wall.
+        """
+        from FreeCAD import Units
+
+        operation = "Arch Space from single wall"
+        _msg(f"\n  Test '{operation}'")
+
+        # Create a wall
+        pl = App.Placement()
+        pl.Rotation.Q = (0.0, 0.0, 0.0, 1.0)
+        pl.Base = App.Vector(-2000.0, -2000.0, 0.0)
+        rectangleBase = Draft.make_rectangle(
+            length=4000.0, height=4000.0, placement=pl, face=False, support=None)
+        wall = Arch.makeWall(rectangleBase)
+
+        # Create a space from the wall's inner faces
+        boundaries = ['Face8', 'Face7', 'Face6', 'Face5']
+        if App.GuiUp:
+            FreeCADGui.Selection.clearSelection()
+            FreeCADGui.Selection.addSelection(wall, boundaries)
+
+            space = Arch.makeSpace(FreeCADGui.Selection.getSelectionEx())
+            # Alternative, but test takes longer to run (~10x)
+            # FreeCADGui.activateWorkbench("BIMWorkbench")
+            # FreeCADGui.runCommand('Arch_Space', 0)
+            # space = App.ActiveDocument.Space
+        else:
+            # Also tests the alternative way of specifying the boundaries
+            # [ (<Part::PartFeature>, ["Face1", ...]), ... ]
+            space = Arch.makeSpace([(wall, boundaries)])
+
+        App.ActiveDocument.recompute() # To calculate area
+
+        # Assert if area is as expected
+        expectedArea = Units.parseQuantity('16 m^2')
+        actualArea = Units.parseQuantity(str(space.Area))
+
+        self.assertAlmostEqual(
+            expectedArea.Value,
+            actualArea.Value,
+            msg = f"Invalid area value. Expected: {expectedArea.UserString}, actual: {actualArea.UserString}")
+
     def tearDown(self):
         App.closeDocument("ArchTest")
         pass
