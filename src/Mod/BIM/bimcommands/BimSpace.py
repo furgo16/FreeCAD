@@ -56,7 +56,9 @@ class Arch_Space:
         sel = FreeCADGui.Selection.getSelectionEx()
         if sel:
             FreeCADGui.Control.closeDialog()
-            if len(sel) == 1 and (not sel[0].HasSubObjects or len(sel[0].SubObjects) == 1):
+            isSingleObject = len(sel) == 1
+            hasNoBoundaries = (not sel[0].HasSubObjects) or len(sel[0].SubObjects) == 1
+            if isSingleObject and hasNoBoundaries:
                 # The selection is a single object. Either with no subobjects (e.g. user clicked
                 # the object on the Tree View), or with a single subobject (e.g. user clicked
                 # on an object's face to select it on the 3D view).
