@@ -838,12 +838,16 @@ class ArchTest(unittest.TestCase):
         # Create a space from the wall's inner faces
         boundaries = [f"Face{ind+1}" for ind, face in enumerate(wall.Shape.Faces)
                       if round(face.Area) == 12000000]
+        print(f"{operation}: boundaries are {boundaries}")
+        _msg(f"{operation} msg: boundaries are {boundaries}")
 
         if App.GuiUp:
             FreeCADGui.Selection.clearSelection()
             FreeCADGui.Selection.addSelection(wall, boundaries)
 
             space = Arch.makeSpace(FreeCADGui.Selection.getSelectionEx())
+            print(f"{operation} GUI: space is {space}")
+            _msg(f"{operation} GUI msg: space is {space}")
             # Alternative, but test takes longer to run (~10x)
             # FreeCADGui.activateWorkbench("BIMWorkbench")
             # FreeCADGui.runCommand('Arch_Space', 0)
@@ -852,8 +856,13 @@ class ArchTest(unittest.TestCase):
             # Also tests the alternative way of specifying the boundaries
             # [ (<Part::PartFeature>, ["Face1", ...]), ... ]
             space = Arch.makeSpace([(wall, boundaries)])
+            print(f"{operation} CLI: space is {space}")
+            _msg(f"{operation} CLI msg: space is {space}")
 
         App.ActiveDocument.recompute() # To calculate area
+
+        print(f"{operation}: area is {str(space.Area)}")
+        _msg(f"{operation} msg: area is {str(space.Area)}")
 
         # Assert if area is as expected
         expectedArea = Units.parseQuantity('16 m^2')
