@@ -772,7 +772,7 @@ def makeSpace(objects=None,baseobj=None,name=None):
     """makeSpace([objects],[baseobj],[name]): Creates a space object from the given objects.
     Objects can be one document object, in which case it becomes the base shape of the space
     object, or a list of selection objects as got from getSelectionEx(), or a list of tuples
-    (object, subobjectname)"""
+    [ (object, [subobjectname, ...]), ... ]"""
 
     import ArchSpace
     if not FreeCAD.ActiveDocument:
@@ -790,10 +790,20 @@ def makeSpace(objects=None,baseobj=None,name=None):
             objects = [objects]
         isSingleObject = len(objects) == 1
         try:
-            hasBoundaries = objects[0].HasSubObjects
-        except:
-            hasBoundaries = False
-        if isSingleObject and not hasBoundaries:
+            if hasattr(objects[0],"HasSubObjects"):
+                # Selection set
+                # [<SelectionObject>]
+                hasNoBoundaries = not objects[0].HasSubObjects
+            else:
+                # Single object with subojects. If it has only
+                # a subobject, do not consider it as a boundary
+                # [ (<Part::PartFeature>, ["Face1", ...]) ]
+                hasNoBoundaries = not len(objects[0][1]) > 1
+        except TypeError:
+            # Single object
+            # [ <Part::PartFeature> ]
+            hasNoBoundaries = True
+        if isSingleObject and hasNoBoundaries:
             obj.Base = objects[0]
             if FreeCAD.GuiUp:
                 objects[0].ViewObject.hide()
