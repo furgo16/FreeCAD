@@ -52,6 +52,7 @@ import ArchComponent
 import ArchSketchObject
 import Draft
 import DraftVecUtils
+from Arch import createBlocks
 
 from FreeCAD import Vector
 from draftutils import params
@@ -1172,112 +1173,6 @@ class _Wall(ArchComponent.Component):
                 extrusion = placement.inverse().Rotation.multVec(extrusion)
             return (base,extrusion,placement)
         return None
-
-def createBlocks(base, obj, extrusion_vector, base_wires):
-    """Create blocks for the wall based on the MakeBlocks property.
-
-    This function generates a wall composed of individual blocks by extruding
-    and cutting the base shape according to the specified block dimensions,
-    offsets, and joints.
-
-    Key Points:
-    1. **Cut Shapes**:
-       - Temporary geometries are created to subtract material from the base shape,
-         forming gaps between blocks. These cut shapes are extruded along the
-         extrusion vector to define the separations between blocks.
-
-    2. **Plates**:
-       - Plates are the remaining portions of the base shape after the cut shapes
-         are subtracted. These plates (flat surfaces) are extruded vertically to
-         form the 3D block shapes for each row of blocks.
-
-    Parameters
-    ----------
-    base : Part.Shape
-        The base shape of the wall.
-    obj : App::FeaturePython
-        The wall object containing block-related properties.
-    extrusion_vector : FreeCAD.Vector
-        The extrusion vector for the wall.
-    base_wires : list
-        The base wires used for block creation.
-
-    Returns
-    -------
-    Part.Shape or None
-        The shape of the wall with blocks, or None if blocks cannot be created.
-    """
-    import Part
-
-    # Validate inputs
-    if not base_wires or obj.BlockLength.Value <= 0 or obj.BlockHeight.Value <= 0 or extrusion_vector.Length <= 0:
-        FreeCAD.Console.PrintError("Invalid input parameters for block creation.\n")
-        return None
-
-    def create_cut_shapes(offset, direction, base_edges):
-        """Create cut shapes for blocks based on the offset and direction."""
-        cuts = []
-        for edge in base_edges:
-            while offset < (edge.Length - obj.Joint.Value):
-                tangent = edge.tangentAt(offset)
-                perpendicular = tangent.cross(direction).normalize()
-                perpendicular.scale(1.1 * obj.Width.Value + obj.Offset.Value)
-                point1 = edge.valueAt(offset).add(perpendicular)
-                point2 = edge.valueAt(offset).sub(perpendicular)
-                cut_shape = Part.LineSegment(point1, point2).toShape()
-                if obj.Joint.Value:
-                    cut_shape = cut_shape.extrude(-tangent * obj.Joint.Value)
-                cut_shape = cut_shape.extrude(direction)
-                cuts.append(cut_shape)
-                offset += obj.BlockLength.Value + obj.Joint.Value
-            offset -= edge.Length
-        return cuts
-
-    def extrude_faces(base_faces, direction):
-        """Extrude a list of faces in the given direction."""
-        return Part.makeCompound([face.extrude(direction) for face in base_faces])
-
-    # Normalize the extrusion vector
-    direction = extrusion_vector.normalize()
-
-    # Create cuts for the first and second rows of blocks
-    cuts1, cuts2 = [], []
-    if obj.BlockLength.Value and len(base_wires) == 1:
-        base_edges = base_wires[0]
-        cuts1 = create_cut_shapes(obj.OffsetFirst.Value, direction, base_edges)
-        cuts2 = create_cut_shapes(obj.OffsetSecond.Value, direction, base_edges)
-
-    # Determine block height and extrusion size
-    block_height = obj.BlockHeight.Value or obj.Height.Value
-    full_size = block_height + obj.Joint.Value
-    block_vector = direction * block_height
-    full_vector = direction * full_size
-
-    # Cut the base shape and extrude faces for blocks
-    base_faces = base.Faces if not isinstance(base, list) else base[0].Faces
-    plate1_faces = base.cut(cuts1).Faces if cuts1 else base_faces
-    plate2_faces = base.cut(cuts2).Faces if cuts2 else base_faces
-    blocks1 = extrude_faces(plate1_faces, block_vector)
-    blocks2 = extrude_faces(plate2_faces, block_vector)
-
-    # Create the final block compound
-    blocks = []
-    full_row_count = int(extrusion_vector.Length / full_size)
-    remaining_length = extrusion_vector.Length % full_size
-
-    for i in range(full_row_count):
-        block = Part.Shape(blocks2 if i % 2 else blocks1)
-        block.translate(full_vector * i)
-        blocks.append(block)
-
-    if remaining_length > 0:
-        remaining_vector = direction * remaining_length
-        remaining_faces = plate2_faces if full_row_count % 2 else plate1_faces
-        remaining_block = extrude_faces(remaining_faces, remaining_vector)
-        remaining_block.translate(full_vector * full_row_count)
-        blocks.append(remaining_block)
-
-    return Part.makeCompound(blocks) if blocks else None
 
 class _ViewProviderWall(ArchComponent.ViewProviderComponent):
     """The view provider for the wall object.
