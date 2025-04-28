@@ -1298,6 +1298,51 @@ def makeWindow(baseobj=None,width=None,height=None,parts=None,name=None):
         todo.ToDo.delay(ArchWindow.recolorize,[obj.Document.Name,obj.Name])
     return obj
 
+def makeSlab(baseobj=None, height=None, name="Slab"):
+    """Create a new slab object using the ArchSlab._Slab class.
+
+    Parameters
+    ----------
+    baseobj : App::DocumentObject, optional
+        The base object for the slab (e.g., a sketch or wire).
+    height : float, optional
+        The height of the slab.
+    name : str, optional
+        The name of the slab object.
+
+    Returns
+    -------
+    App::DocumentObject
+        The newly created slab object.
+    """
+    import ArchSlab
+
+    if not FreeCAD.ActiveDocument:
+        FreeCAD.Console.PrintError("No active document. Aborting.\n")
+        return None
+
+    # Create a new slab object
+    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
+    ArchSlab._Slab(obj)  # Use the ArchSlab._Slab class to initialize the slab
+    if FreeCAD.GuiUp:
+        ArchSlab.ArchStructure._ViewProviderStructure(obj.ViewObject)
+
+    # Set the base object and height if provided
+    if baseobj:
+        obj.Base = baseobj
+        if FreeCAD.GuiUp:
+            baseobj.ViewObject.hide()
+
+    if height:
+        obj.Height = height
+
+    # Set default properties
+    obj.Label = FreeCAD.Qt.translate("BIM", "Slab")
+    obj.IfcType = "Slab"
+    obj.Normal = FreeCAD.Vector(0, 0, -1)
+
+    #FreeCAD.ActiveDocument.recompute()
+    return obj
 
 def createBlocks(base, obj, extrusion_vector, base_wires):
     """Create blocks for the wall based on the MakeBlocks property.
