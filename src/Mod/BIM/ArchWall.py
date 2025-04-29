@@ -448,20 +448,16 @@ class _Wall(ArchComponent.Component):
 
         self.applyShape(obj,base,pl)
 
-        # count blocks
-        if hasattr(obj,"MakeBlocks"):
-            if obj.MakeBlocks:
-                fvol = obj.BlockLength.Value * obj.BlockHeight.Value * obj.Width.Value
-                if fvol:
-                    #print("base volume:",fvol)
-                    #for s in base.Solids:
-                        #print(abs(s.Volume - fvol))
-                    ents = [s for s in base.Solids if abs(s.Volume - fvol) < 1]
-                    obj.CountEntire = len(ents)
-                    obj.CountBroken = len(base.Solids) - len(ents)
-                else:
-                    obj.CountEntire = 0
-                    obj.CountBroken = 0
+        # Count blocks
+        if hasattr(obj, "MakeBlocks") and obj.MakeBlocks:
+            count_entire, count_broken = countBlocks(
+                base,
+                obj.BlockLength.Value,
+                obj.BlockHeight.Value,
+                obj.Width.Value,
+            )
+            obj.CountEntire = count_entire
+            obj.CountBroken = count_broken
 
         # set the length property
         if obj.Base:
@@ -1492,3 +1488,40 @@ def createBlocks(base_shape, base_edges, extrusion_vector, obj):
         return Part.makeCompound(blocks)
 
     return None
+
+def countBlocks(base, block_length, block_height, block_width):
+    """
+    Count the number of entire and broken blocks in the wall.
+
+    Parameters
+    ----------
+    base : Part.Shape
+        The shape of the wall, containing the solids to analyze.
+    block_length : float
+        The length of each block.
+    block_height : float
+        The height of each block.
+    block_width : float
+        The width of each block.
+
+    Returns
+    -------
+    tuple of (int, int)
+        A tuple containing the number of entire blocks and broken blocks.
+    """
+    if not base or not base.Solids:
+        return 0, 0
+
+    # Calculate the volume of an entire block
+    fvol = block_length * block_height * block_width
+    if fvol <= 0:
+        return 0, 0
+
+    # Count entire blocks
+    entire_blocks = [s for s in base.Solids if abs(s.Volume - fvol) < 1]
+    count_entire = len(entire_blocks)
+
+    # Count broken blocks
+    count_broken = len(base.Solids) - count_entire
+
+    return count_entire, count_broken
