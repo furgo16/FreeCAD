@@ -336,7 +336,7 @@ class _Wall(ArchComponent.Component):
 
         import Part
         import DraftGeomUtils
-        base = None
+        baseShape = None
         pl = obj.Placement
 
         # PropertySet support
@@ -371,44 +371,43 @@ class _Wall(ArchComponent.Component):
                 #else:  # Seems no need ...
                     #obj.PropertySet = 'Default'
 
-        extdata = self.getExtrusionData(obj)
-        if extdata:
-            bplates = extdata[0]
-            extv = extdata[2].Rotation.multVec(extdata[1])
-            if isinstance(bplates,list):
+        extrusion_data = self.getExtrusionData(obj)
+        if extrusion_data:
+            basePlates = extrusion_data[0]
+            extrusion_vector = extrusion_data[2].Rotation.multVec(extrusion_data[1])
+            if isinstance(basePlates, list):
                 shps = []
-                # Test : if base is Sketch, then fuse all solid; otherwise, makeCompound
-                sketchBaseToFuse = obj.Base.getLinkedObject().isDerivedFrom("Sketcher::SketchObject")
-                # but turn this off if we have layers, otherwise layers get merged
-                if hasattr(obj,"Material") and obj.Material \
-                and hasattr(obj.Material,"Materials") and obj.Material.Materials:
-                    sketchBaseToFuse = False
-                for b in bplates:
-                    b.Placement = extdata[2].multiply(b.Placement)
-                    b = b.extrude(extv)
+                # Test: if base is a Sketch, then fuse all solid; otherwise, makeCompound
+                fuseBaseSketch = obj.Base.getLinkedObject().isDerivedFrom("Sketcher::SketchObject")
+                
+                # But turn this off if we have layers, otherwise layers get merged
+                if (hasattr(obj,"Material") and obj.Material 
+                    and hasattr(obj.Material,"Materials") and obj.Material.Materials):
+                    fuseBaseSketch = False
+            
+                for plate in basePlates:
+                    plate.Placement = extrusion_data[2].multiply(plate.Placement)
+                    plate = plate.extrude(extrusion_vector)
 
                     # See getExtrusionData() - not fusing baseplates there - fuse solids here
                     # Remarks - If solids are fused, but exportIFC.py use underlying baseplates w/o fuse, the result in ifc look slightly different from in FC.
 
-                    if sketchBaseToFuse:
+                    if fuseBaseSketch:
                         if shps:
-                            shps = shps.fuse(b) #shps.fuse(b)
+                            shps = shps.fuse(plate) #shps.fuse(b)
                         else:
-                            shps=b
+                            shps = plate
                     else:
-                        shps.append(b)
+                        shps.append(plate)
                     # TODO - To let user to select whether to fuse (slower) or to do a compound (faster) only ?
 
-                if sketchBaseToFuse:
-                    base = shps
+                if fuseBaseSketch:
+                    baseShape = shps
                 else:
-                    base = Part.makeCompound(shps)
+                    baseShape = Part.makeCompound(shps)
             else:
-                bplates.Placement = extdata[2].multiply(bplates.Placement)
-                base = bplates.extrude(extv)
-
-        # Use bplates as the base shape for block creation
-        base_shape = bplates
+                basePlates.Placement = extrusion_data[2].multiply(basePlates.Placement)
+                baseShape = basePlates.extrude(extrusion_vector)
 
         if obj.Base:
             if hasattr(obj.Base,'Shape'):
@@ -419,14 +418,14 @@ class _Wall(ArchComponent.Component):
                         # let pass invalid objects if they have solids...
                         return
                 elif obj.Base.Shape.Solids:
-                    base = Part.Shape(obj.Base.Shape)
+                    baseShape = Part.Shape(obj.Base.Shape)
                 # blocks calculation
                 elif hasattr(obj,"MakeBlocks") and hasattr(self,"basewires"):
-                    if obj.MakeBlocks and self.basewires and extdata and obj.Width and obj.Height:
+                    if obj.MakeBlocks and self.basewires and extrusion_data and obj.Width and obj.Height:
                         base_edges = self.basewires[0]  # Convert to edges
-                        blocks = createBlocks(base_shape, base_edges, extv, obj)
+                        blocks = createBlocks(basePlates, base_edges, extrusion_vector, obj)
                         if blocks:
-                            base = blocks
+                            baseShape = blocks
                         else:
                             FreeCAD.Console.PrintWarning(f"Cannot compute blocks for wall {obj.Label}.\n")
 
@@ -435,24 +434,24 @@ class _Wall(ArchComponent.Component):
                     if obj.Base.Mesh.countComponents() == 1:
                         sh = ArchCommands.getShapeFromMesh(obj.Base.Mesh)
                         if sh.isClosed() and sh.isValid() and sh.Solids and (not sh.isNull()):
-                            base = sh
+                            baseShape = sh
                         else:
                             FreeCAD.Console.PrintWarning(translate("Arch","This mesh is an invalid solid")+"\n")
                             obj.Base.ViewObject.show()
-        if not base:
+        if not baseShape:
             #FreeCAD.Console.PrintError(translate("Arch","Error: Invalid base object")+"\n")
             #return
             # walls can be made of only a series of additions and have no base shape
-            base = Part.Shape()
+            baseShape = Part.Shape()
 
-        base = self.processSubShapes(obj,base,pl)
+        baseShape = self.processSubShapes(obj,baseShape,pl)
 
-        self.applyShape(obj,base,pl)
+        self.applyShape(obj,baseShape,pl)
 
         # Count blocks
         if hasattr(obj, "MakeBlocks") and obj.MakeBlocks:
             count_entire, count_broken = countBlocks(
-                base,
+                baseShape,
                 obj.BlockLength.Value,
                 obj.BlockHeight.Value,
                 obj.Width.Value,
