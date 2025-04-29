@@ -1324,6 +1324,10 @@ def createBlocks(base_shape, base_edges, extrusion_vector, obj):
     if not obj.MakeBlocks:
         return None
 
+    if obj.BlockLength.Value <= 0 or obj.Joint.Value < 0:
+        FreeCAD.Console.PrintWarning("Invalid BlockLength or Joint value. Skipping block creation.\n")
+        return None
+
     blocks = []
     n = FreeCAD.Vector(extrusion_vector)
     n.normalize()
@@ -1478,15 +1482,19 @@ def makeSlab(base_object, height=200, label="Slab"):
     App.DocumentObject
         The created slab object.
     """
-    import Arch
+    import ArchStructure
+    import ArchSlab
 
     if not base_object:
         raise ValueError("A base object must be provided to create a slab.")
 
-    # Create the slab using Arch.makeStructure
-    slab = Arch.makeStructure(base_object, height=height)
+    # Create the slab using ArchStructure.makeStructure
+    slab = ArchStructure.makeStructure(base_object, height=height)
     if not slab:
         raise RuntimeError("Failed to create the slab.")
+
+    # Associate the _Slab class with the slab object
+    ArchSlab._Slab(slab)
 
     # Set the slab properties
     slab.Label = label
