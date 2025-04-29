@@ -1459,3 +1459,38 @@ def countBlocks(base, block_length, block_height, block_width):
     count_broken = len(base.Solids) - count_entire
 
     return count_entire, count_broken
+
+def makeSlab(base_object, height=200, label="Slab"):
+    """
+    Create a slab from a planar object.
+
+    Parameters
+    ----------
+    base_object : App.DocumentObject
+        The planar object to use as the base for the slab.
+    height : float, optional
+        The height of the slab (default is 200).
+    label : str, optional
+        The label for the slab (default is "Slab").
+
+    Returns
+    -------
+    App.DocumentObject
+        The created slab object.
+    """
+    import Arch
+
+    if not base_object:
+        raise ValueError("A base object must be provided to create a slab.")
+
+    # Create the slab using Arch.makeStructure
+    slab = Arch.makeStructure(base_object, height=height)
+    if not slab:
+        raise RuntimeError("Failed to create the slab.")
+
+    # Set the slab properties
+    slab.Label = label
+    slab.IfcType = "Slab"  # Default IFC type for slabs
+    slab.Normal = FreeCAD.Vector(0, 0, -1)  # Default normal vector for slabs
+
+    return slab

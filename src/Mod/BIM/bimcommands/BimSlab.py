@@ -74,16 +74,13 @@ class BIM_Slab:
         self.removeCallback()
         sel = FreeCADGui.Selection.getSelection()
         if len(sel) == 1:
+            label = translate("BIM", "Slab")
+            base = f"FreeCAD.ActiveDocument.{sel[0].Name}"
             FreeCADGui.addModule("Arch")
             FreeCAD.ActiveDocument.openTransaction("Create Slab")
             FreeCADGui.doCommand(
-                "s = Arch.makeStructure(FreeCAD.ActiveDocument."
-                + sel[0].Name
-                + ",height=200)"
+                f"s = Arch.makeSlab({base}, height=200, label='{label}')"
             )
-            FreeCADGui.doCommand('s.Label = "' + translate("BIM", "Slab") + '"')
-            FreeCADGui.doCommand('s.IfcType = "Slab"')
-            FreeCADGui.doCommand("s.Normal = FreeCAD.Vector(0,0,-1)")
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
         self.finish()

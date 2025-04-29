@@ -13,6 +13,7 @@ SET(Arch_SRCS
     ArchWall.py
     Arch.py
     ArchSite.py
+    ArchSlab.py
     ArchStructure.py
     ArchCommands.py
     ArchSectionPlane.py
