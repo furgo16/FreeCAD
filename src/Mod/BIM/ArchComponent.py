@@ -1027,7 +1027,10 @@ class Component(ArchIFC.IfcProduct):
             for f in fset:
                 try:
                     import TechDraw
-                    pf = Part.makeFace(DraftGeomUtils.findWires(TechDraw.project(f,FreeCAD.Vector(0,0,1))[0].Edges), "Part::FaceMakerCheese")
+                    visible_hard, _, _, visible_outer, _, _, _, _, _, _ = TechDraw.projectEx(f, FreeCAD.Vector(0,0,1))
+                    edges = visible_hard.Edges
+                    edges.extend(visible_outer.Edges)
+                    pf = Part.makeFace(DraftGeomUtils.findWires(edges), "Part::FaceMakerCheese")
                 except Part.OCCError:
                     # error in computing the areas. Better set them to zero than show a wrong value
                     if obj.HorizontalArea.Value != 0:
