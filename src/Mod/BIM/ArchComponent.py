@@ -1027,7 +1027,17 @@ class Component(ArchIFC.IfcProduct):
             for f in fset:
                 try:
                     import TechDraw
-                    visible_hard, _, _, visible_outer, _, _, _, _, _, _ = TechDraw.projectEx(f, FreeCAD.Vector(0,0,1))
+                    visible_hard, visible_smooth, visible_contour, visible_outer, visible_inner, hidden_hard, hidden_smooth, hidden_contour, hidden_outer, hidden_inner = TechDraw.projectEx(f, FreeCAD.Vector(0,0,1))
+                    print(f"Debug: Visible hard edges: {visible_hard.Edges}")
+                    print(f"Debug: Visible smooth edges: {visible_smooth.Edges}")
+                    print(f"Debug: Visible contour edges: {visible_contour.Edges}")
+                    print(f"Debug: Visible outer edges: {visible_outer.Edges}")
+                    print(f"Debug: Visible inner edges: {visible_inner.Edges}")
+                    print(f"Debug: Hidden hard edges: {hidden_hard.Edges}")
+                    print(f"Debug: Hidden smooth edges: {hidden_smooth.Edges}")
+                    print(f"Debug: Hidden contour edges: {hidden_contour.Edges}")
+                    print(f"Debug: Hidden outer edges: {hidden_outer.Edges}")
+                    print(f"Debug: Hidden inner edges: {hidden_inner.Edges}")
                     edges = visible_hard.Edges
                     edges.extend(visible_outer.Edges)
                     pf = Part.makeFace(DraftGeomUtils.findWires(edges), "Part::FaceMakerCheese")
