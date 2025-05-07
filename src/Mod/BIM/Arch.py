@@ -222,15 +222,13 @@ def makeCurtainWall(baseobj=None,name=None):
 
     """makeCurtainWall([baseobj],[name]): Creates a curtain wall in the active document"""
 
-    import ArchCurtainWall
-    if not FreeCAD.ActiveDocument:
-        FreeCAD.Console.PrintError("No active document. Aborting\n")
-        return
-    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","CurtainWall")
-    obj.Label = name if name else translate("Arch","Curtain Wall")
-    ArchCurtainWall.CurtainWall(obj)
-    if FreeCAD.GuiUp:
-        ArchCurtainWall.ViewProviderCurtainWall(obj.ViewObject)
+    obj = _initializeArchObject(
+        "Part::FeaturePython",
+        baseClassName="CurtainWall",
+        internalname="CurtainWall",
+        defaultLabel=name if name else translate("Arch", "Curtain Wall"),
+        viewProviderName="ViewProviderCurtainWall",
+    )
     if baseobj:
         obj.Base = baseobj
         if FreeCAD.GuiUp:
@@ -268,14 +266,17 @@ def makeFence(section, post, path):
 
     """Makes a Fence object"""
 
-    import ArchFence
-    obj = FreeCAD.ActiveDocument.addObject('Part::FeaturePython', 'Fence')
-    ArchFence._Fence(obj)
+    obj = _initializeArchObject(
+        "Part::FeaturePython",
+        baseClassName="_Fence",
+        internalName="Fence",
+        defaultLabel=translate("Arch", "Fence"),
+    )
     obj.Section = section
     obj.Post = post
     obj.Path = path
     if FreeCAD.GuiUp:
-        ArchFence._ViewProviderFence(obj.ViewObject)
+        import ArchFence
         ArchFence.hide(section)
         ArchFence.hide(post)
         ArchFence.hide(path)
@@ -287,15 +288,12 @@ def makeFrame(baseobj,profile,name=None):
     """makeFrame(baseobj,profile,[name]): creates a frame object from a base sketch (or any other object
     containing wires) and a profile object (an extrudable 2D object containing faces or closed wires)"""
 
-    import ArchFrame
-    if not FreeCAD.ActiveDocument:
-        FreeCAD.Console.PrintError("No active document. Aborting\n")
-        return
-    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Frame")
-    obj.Label = name if name else translate("Arch","Frame")
-    ArchFrame._Frame(obj)
-    if FreeCAD.GuiUp:
-        ArchFrame._ViewProviderFrame(obj.ViewObject)
+    obj = _initializeArchObject(
+        "Part::FeaturePython",
+        baseClassName="_Frame",
+        internalName="Frame",
+        defaultLabel=name if name else translate("Arch", "Frame"),
+    )
     if baseobj:
         obj.Base = baseobj
     if profile:
@@ -309,12 +307,15 @@ def makeGrid(name=None):
 
     '''makeGrid([name]): makes a grid object'''
 
-    import ArchGrid
-    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Grid")
-    obj.Label = name if name else translate("Arch","Grid")
-    ArchGrid.ArchGrid(obj)
+    obj = _initializeArchObject(
+        "Part::FeaturePython",
+        baseClassName="ArchGrid",
+        internalName="Grid",
+        defaultLabel=name if name else translate("Arch", "Grid"),
+        moduleName="ArchGrid",
+        viewProviderName="ViewProviderArchGrid",
+    )
     if FreeCAD.GuiUp:
-        ArchGrid.ViewProviderArchGrid(obj.ViewObject)
         obj.ViewObject.Transparency = 85
     FreeCAD.ActiveDocument.recompute()
     return obj
@@ -324,15 +325,12 @@ def makeMaterial(name=None,color=None,transparency=None):
 
     '''makeMaterial([name],[color],[transparency]): makes an Material object'''
 
-    import ArchMaterial
-    if not FreeCAD.ActiveDocument:
-        FreeCAD.Console.PrintError("No active document. Aborting\n")
-        return
-    obj = FreeCAD.ActiveDocument.addObject("App::MaterialObjectPython","Material")
-    obj.Label = name if name else translate("Arch","Material")
-    ArchMaterial._ArchMaterial(obj)
-    if FreeCAD.GuiUp:
-        ArchMaterial._ViewProviderArchMaterial(obj.ViewObject)
+    obj = _initializeArchObject(
+        "App::MaterialObjectPython",
+        baseClassName="_ArchMaterial",
+        internalName="Material",
+        defaultLabel=name if name else translate("Arch", "Material"),
+    )
     getMaterialContainer().addObject(obj)
     if color:
         obj.Color = color[:3]
@@ -347,12 +345,12 @@ def makeMultiMaterial(name=None):
 
     '''makeMultiMaterial([name]): makes an MultiMaterial object'''
 
-    import ArchMaterial
-    obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython","MultiMaterial")
-    obj.Label = name if name else translate("Arch","MultiMaterial")
-    ArchMaterial._ArchMultiMaterial(obj)
-    if FreeCAD.GuiUp:
-        ArchMaterial._ViewProviderArchMultiMaterial(obj.ViewObject)
+    obj = _initializeArchObject(
+        "App::FeaturePython",
+        baseClassName="_ArchMultiMaterial",
+        internalName="MultiMaterial",
+        defaultLabel=name if name else translate("Arch", "MultiMaterial"),
+    )
     getMaterialContainer().addObject(obj)
     return obj
 
@@ -394,15 +392,12 @@ def makePanel(baseobj=None,length=0,width=0,thickness=0,placement=None,name=None
     extrusion thickness. If no base object is given, you can also specify
     length and width for a simple cubic object.'''
 
-    import ArchPanel
-    if not FreeCAD.ActiveDocument:
-        FreeCAD.Console.PrintError("No active document. Aborting\n")
-        return
-    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Panel")
-    obj.Label = name if name else translate("Arch","Panel")
-    ArchPanel._Panel(obj)
-    if FreeCAD.GuiUp:
-        ArchPanel._ViewProviderPanel(obj.ViewObject)
+    obj = _initializeArchObject(
+        "Part::FeaturePython",
+        baseClassName="_Panel",
+        internalName="Panel",
+        defaultLabel=name if name else translate("Arch", "Panel"),
+    )
     if baseobj:
         obj.Base = baseobj
         if FreeCAD.GuiUp:
@@ -1298,12 +1293,13 @@ def makeWindow(baseobj=None,width=None,height=None,parts=None,name=None):
         todo.ToDo.delay(ArchWindow.recolorize,[obj.Document.Name,obj.Name])
     return obj
 
-def initializeArchObject(
+
+def _initializeArchObject(
     objectType,
-    nameInternal=None,
+    baseClassName=None,
+    internalName=None,
     defaultLabel=None,
     moduleName=None,
-    baseClassName=None,
     viewProviderName=None,
 ):
     """
@@ -1313,16 +1309,18 @@ def initializeArchObject(
     ----------
     objectType : str
         The type of object to create (e.g., "Part::FeaturePython").
-    nameInternal : str, optional
+    baseClassName : str
+        The name of the base class to initialize the object (e.g., "_ArchSchedule").
+    internalName : str, optional
         The internal name to assign to the object.
     defaultLabel : str, optional
         The default label to assign to the object if no name is provided.
     moduleName : str, optional
-        The name of the module containing the base class and view provider (e.g., "ArchSchedule").
-    baseClassName : str, optional
-        The name of the base class to initialize the object (e.g., "_ArchSchedule").
+        The name of the module containing the base class and view provider. If not provided,
+        it is inferred from baseClassName.
     viewProviderName : str, optional
-        The name of the view provider class to initialize the object's view (e.g., "_ViewProviderArchSchedule").
+        The name of the view provider class to initialize the object's view. If not provided,
+        it is inferred from baseClassName.
 
     Returns
     -------
@@ -1335,22 +1333,41 @@ def initializeArchObject(
 
     import importlib
 
-    obj = FreeCAD.ActiveDocument.addObject(objectType, nameInternal)
+    # Infer moduleName and viewProviderName if not provided
+    if not moduleName:
+        moduleName = "Arch" + baseClassName.lstrip("_").strip("Arch")
+    if not viewProviderName:
+        viewProviderName = "_ViewProvider" + baseClassName.lstrip("_")
+
+    obj = FreeCAD.ActiveDocument.addObject(objectType, internalName)
     if not obj:
         return None
 
     obj.Label = defaultLabel
 
-    if moduleName and baseClassName:
+    try:
+        # Import module and initialize base class
         module = importlib.import_module(moduleName)
         baseClass = getattr(module, baseClassName, None)
-        if baseClass:
-            baseClass(obj)
+        if not baseClass:
+            FreeCAD.Console.PrintError(
+                f"Base class '{baseClassName}' not found in module '{moduleName}'.\n"
+            )
+            return None
+        baseClass(obj)
 
-    if FreeCAD.GuiUp and moduleName and viewProviderName:
-        module = importlib.import_module(moduleName)
-        viewProvider = getattr(module, viewProviderName, None)
-        if viewProvider:
-            viewProvider(obj.ViewObject)
+        # Initialize view provider
+        if FreeCAD.GuiUp:
+            viewProvider = getattr(module, viewProviderName, None)
+            if not viewProvider:
+                FreeCAD.Console.PrintWarning(
+                    f"View provider '{viewProviderName}' not found in module '{moduleName}'.\n"
+                )
+            else:
+                viewProvider(obj.ViewObject)
+
+    except ImportError as e:
+        FreeCAD.Console.PrintError(f"Failed to import module '{moduleName}': {e}\n")
+        return None
 
     return obj
