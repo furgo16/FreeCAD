@@ -1297,3 +1297,60 @@ def makeWindow(baseobj=None,width=None,height=None,parts=None,name=None):
         obj.Base.ViewObject.hide()
         todo.ToDo.delay(ArchWindow.recolorize,[obj.Document.Name,obj.Name])
     return obj
+
+def initializeArchObject(
+    objectType,
+    nameInternal=None,
+    defaultLabel=None,
+    moduleName=None,
+    baseClassName=None,
+    viewProviderName=None,
+):
+    """
+    Initializes a new Arch object in the active document.
+
+    Parameters
+    ----------
+    objectType : str
+        The type of object to create (e.g., "Part::FeaturePython").
+    nameInternal : str, optional
+        The internal name to assign to the object.
+    defaultLabel : str, optional
+        The default label to assign to the object if no name is provided.
+    moduleName : str, optional
+        The name of the module containing the base class and view provider (e.g., "ArchSchedule").
+    baseClassName : str, optional
+        The name of the base class to initialize the object (e.g., "_ArchSchedule").
+    viewProviderName : str, optional
+        The name of the view provider class to initialize the object's view (e.g., "_ViewProviderArchSchedule").
+
+    Returns
+    -------
+    App.DocumentObject
+        The created object, or None if no active document exists.
+    """
+    if not FreeCAD.ActiveDocument:
+        FreeCAD.Console.PrintError("No active document. Aborting\n")
+        return None
+
+    import importlib
+
+    obj = FreeCAD.ActiveDocument.addObject(objectType, nameInternal)
+    if not obj:
+        return None
+
+    obj.Label = defaultLabel
+
+    if moduleName and baseClassName:
+        module = importlib.import_module(moduleName)
+        baseClass = getattr(module, baseClassName, None)
+        if baseClass:
+            baseClass(obj)
+
+    if FreeCAD.GuiUp and moduleName and viewProviderName:
+        module = importlib.import_module(moduleName)
+        viewProvider = getattr(module, viewProviderName, None)
+        if viewProvider:
+            viewProvider(obj.ViewObject)
+
+    return obj
