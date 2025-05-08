@@ -38,6 +38,8 @@ import WorkingPlane
 from bimtests.TestArchRoof import TestArchRoof
 from bimtests.TestArchSpace import TestArchSpace
 from bimtests.TestArchWall import TestArchWall
+from bimtests.TestArchBuildingPart import TestArchBuildingPart
+from bimtests.TestArchAxis import TestArchAxis
 
 from draftutils.messages import _msg
 
@@ -57,27 +59,6 @@ class ArchTest(unittest.TestCase):
         App.Console.PrintLog ('Checking BIM Structure...\n')
         s = Arch.makeStructure(length=2,width=3,height=5)
         self.assertTrue(s,"BIM Structure failed")
-
-    def testFloor(self):
-        App.Console.PrintLog ('Checking Arch Floor...\n')
-        s = Arch.makeStructure(length=2,width=3,height=5)
-        f = Arch.makeFloor([s])
-        self.assertTrue(f,"Arch Floor failed")
-
-    def testBuilding(self):
-        App.Console.PrintLog ('Checking Arch Building...\n')
-        s = Arch.makeStructure(length=2,width=3,height=5)
-        f = Arch.makeFloor([s])
-        b = Arch.makeBuilding([f])
-        self.assertTrue(b,"Arch Building failed")
-
-    def testSite(self):
-        App.Console.PrintLog ('Checking Arch Site...\n')
-        s = Arch.makeStructure(length=2,width=3,height=5)
-        f = Arch.makeFloor([s])
-        b = Arch.makeBuilding([f])
-        si = Arch.makeSite([b])
-        self.assertTrue(si,"Arch Site failed")
 
     def testWindow(self):
         operation = "Arch Window"
@@ -216,3 +197,5 @@ class ArchTest(unittest.TestCase):
 True if TestArchSpace else False
 True if TestArchRoof else False
 True if TestArchWall else False
+True if TestArchBuildingPart else False
+True if TestArchAxis else False

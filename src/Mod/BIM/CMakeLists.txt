@@ -198,7 +198,9 @@ SET(nativeifc_SRCS
 )
 
 SET(bimtests_SRCS
+    bimtests/TestArchAxis.py
     bimtests/TestArchBase.py
+    bimtests/TestArchBuildingPart.py
     bimtests/TestArchRoof.py
     bimtests/TestArchSpace.py
     bimtests/TestArchWall.py
