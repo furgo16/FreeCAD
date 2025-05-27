@@ -30,7 +30,6 @@ This is the complete python API reference of the FreeCAD application
    DraftSnap.rst
    DraftWorkingPlane.rst
    Arch.rst
-   Drawing.rst
 
 * :ref:`genindex`
 * :ref:`modindex`
