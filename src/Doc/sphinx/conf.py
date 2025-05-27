@@ -35,32 +35,78 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os, commands
+import sys, os
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #sys.path.insert(0, os.path.abspath('.'))
 
-# first look for local (home-compiled) FreeCAD in its default location:
+# --- Path Setup ---
+print("-" * 30)
+print("Configuring paths for FreeCAD API documentation...")
 
-if os.path.exists(os.path.abspath(os.path.join(os.environ["HOME"],"FreeCAD/lib"))):
-    sys.path.append(os.path.abspath(os.path.join(os.environ["HOME"],"FreeCAD/lib")))
+# Determine FreeCAD's main directory (where 'src' and 'build' reside)
+# Assumes conf.py is in FREECAD_MAIN_DIR/src/Doc/sphinx/
+sphinx_conf_dir = os.path.dirname(__file__)
+FREECAD_MAIN_DIR = os.path.abspath(os.path.join(sphinx_conf_dir, "..", "..", ".."))
+print(f"  Guessed FREECAD_MAIN_DIR: {FREECAD_MAIN_DIR}")
 
-# otherwise try to locate FreeCAD lib somewhere else:
+if not os.path.isdir(FREECAD_MAIN_DIR):
+    print(f"  FATAL: Could not determine FreeCAD main directory based on conf.py location.")
+    print(f"         Expected conf.py in <FREECAD_ROOT>/src/Doc/sphinx/")
+    sys.exit(1)
 
-elif commands.getstatusoutput("locate FreeCAD/lib")[0] == 0:
-    path = commands.getstatusoutput("locate FreeCAD/lib")[1].split()[0]
-    sys.path.append(path)
+FREECAD_BUILD_DIR = os.path.join(FREECAD_MAIN_DIR, "build")
+freecad_lib_path = os.path.join(FREECAD_BUILD_DIR, "lib")
+freecad_mod_top_path = os.path.join(FREECAD_BUILD_DIR, "Mod")
 
-# locate TemplatePyMod
-if commands.getstatusoutput("locate TemplatePyMod")[0] == 0:
-    path = commands.getstatusoutput("locate TemplatePyMod")[1].split()[0]
-    sys.path.append(path)
+# Add build/lib to sys.path
+if os.path.isdir(freecad_lib_path):
+    if freecad_lib_path not in sys.path: # Check to avoid duplicates if already on PYTHONPATH
+        print(f"  Adding to sys.path: {freecad_lib_path}")
+        sys.path.insert(0, freecad_lib_path)
+else:
+    print(f"  WARNING: FreeCAD build lib directory not found: {freecad_lib_path}")
+    print(f"           Ensure FreeCAD is built in: {FREECAD_BUILD_DIR}")
 
-import FreeCAD, FreeCADGui
-FreeCADGui.showMainWindow() # this is needed for complete import of GUI modules
-doc = FreeCAD.newDocument("doc")
+# Add top-level Mod directory (build/Mod).
+if os.path.isdir(freecad_mod_top_path):
+    if freecad_mod_top_path not in sys.path: # Check to avoid duplicates
+        print(f"  Adding top-level Mod to sys.path: {freecad_mod_top_path}")
+        sys.path.insert(0, freecad_mod_top_path)
+else:
+    print(f"  WARNING: FreeCAD build Mod directory not found: {freecad_mod_top_path}")
+
+# Explicitly add the 'Draft' workbench module directory to sys.path
+# to help Sphinx find DraftSnap.py, DraftTrackers.py directly
+# when `.. automodule:: DraftSnap` is used, as Draft.py doesn't expose them as attributes.
+draft_mod_path = os.path.join(FREECAD_BUILD_DIR, "Mod", "Draft")
+if os.path.isdir(draft_mod_path):
+    if draft_mod_path not in sys.path:
+        print(f"  Adding specific Mod/Draft to sys.path: {draft_mod_path}")
+        sys.path.insert(0, draft_mod_path)
+else:
+    print(f"  NOTE: Mod/Draft directory not found, direct import of Draft submodules might fail: {draft_mod_path}")
+
+print("  Attempting to import FreeCAD...")
+try:
+    import FreeCAD
+    print(f"  Successfully imported FreeCAD {FreeCAD.Version()}.")
+    # The following lines are problematic for headless builds and initial minimal testing.
+    # import FreeCADGui
+    # FreeCADGui.showMainWindow() # this is needed for complete import of GUI modules
+    # doc = FreeCAD.newDocument("doc")
+except ImportError as e:
+    print(f"  ERROR: Could not import FreeCAD: {e}")
+    print(f"  Current sys.path:")
+    for p in sys.path:
+        print(f"    {p}")
+    print(f"  Please ensure FreeCAD is built and {freecad_lib_path} is correct and accessible.")
+except Exception as e_general:
+    print(f"  ERROR during FreeCAD import or version check: {e_general}")
+
+print("-" * 30)
 
 # -- General configuration -----------------------------------------------------
 
@@ -70,6 +116,15 @@ doc = FreeCAD.newDocument("doc")
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = ['sphinx.ext.autodoc']
+
+autodoc_mock_imports = ["MeshGui",
+                        "ArchRebar",
+                        "FreeCADGui",
+                        "DraftTrackers",
+                        "DraftSnap",
+                        ]
+
+suppress_warnings = ['docutils']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -135,9 +190,9 @@ pygments_style = 'sphinx'
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'default'
+html_theme = 'alabaster'
 
-html_style = 'freecad.css'
+#html_style = 'freecad.css'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -161,7 +216,7 @@ html_title = "FreeCAD API documentation"
 # The name of an image file (within the static path) to use as favicon of the
 # docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
 # pixels large.
-html_favicon = "favicon.ico"
+#html_favicon = "favicon.ico"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
