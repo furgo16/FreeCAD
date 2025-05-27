@@ -12,9 +12,6 @@ The Arch module is a metamodule that imports useful methods from several of the 
 .. automodule:: ArchWall
    :members:
 
-.. automodule:: ArchFloor
-   :members:
-
 .. automodule:: ArchSite
    :members:
 
@@ -27,7 +24,7 @@ The Arch module is a metamodule that imports useful methods from several of the 
 .. automodule:: ArchSectionPlane
    :members:
 
-.. automodule:: ArchBuilding
+.. automodule:: ArchBuildingPart
    :members:
 
 .. automodule:: ArchCommands
