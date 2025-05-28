@@ -12,17 +12,15 @@ This is the complete python API reference of the FreeCAD application
    :maxdepth: 4
 
    FreeCAD.rst
-   FreeCADGui.rst
    Vector.rst
    Placement.rst
    Matrix.rst
    Document.rst
    DocumentObject.rst
-   ViewProvider.rst
    Mesh.rst
    Part.rst
    Sketch.rst
-   PartDesign.rst
+   TechDraw.rst
    Draft.rst
    DraftVecUtils.rst
    DraftGeomUtils.rst
