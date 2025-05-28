@@ -22,30 +22,35 @@
 # *                                                                         *
 # ***************************************************************************
 
-"""Core API for architectural and Building Information Modeling (BIM) in FreeCAD.
+"""
+Core API for architectural and Building Information Modeling (BIM) in FreeCAD.
 
 Provides tools for creating parametric architectural elements (walls, windows,
 structures) and managing BIM data. Serves as the foundation for both the BIM
 Workbench and third-party extensions.
 
-## Features
-- Parametric architectural components (walls, floors, roofs, windows)
-- BIM data support (materials, IFC properties, classification systems)
-- Integration with FreeCAD's core (Part, Draft) and other workbenches
-- Object creation utilities for architectural workflows
+Features
+========
+* Parametric architectural components (walls, floors, roofs, windows)
+* BIM data support (materials, IFC properties, classification systems)
+* Integration with FreeCAD's core (Part, Draft) and other workbenches
+* Object creation utilities for architectural workflows
 
-## Usage
+Usage
+=====
 Designed for:
+
 1. Internal API for FreeCAD's built-in BIM commands
 2. Public API for add-on developers creating extension macros, workbenches, or
    other specialized BIM tools
 
-## Examples
-```python
-import Arch
-wall = Arch.makeWall(length=5000, width=200, height=3000)  # mm units
-wall.recompute()
-```
+Examples
+========
+.. code-block:: python
+
+   import Arch
+   wall = Arch.makeWall(length=5000, width=200, height=3000)  # mm units
+   wall.recompute()
 """
 __title__  = "FreeCAD Arch API"
 __author__ = "Yorik van Havre"
