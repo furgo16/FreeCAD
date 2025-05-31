@@ -2,6 +2,7 @@ The FreeCAD Document Object
 ===========================
 .. currentmodule:: FreeCAD
 .. autoclass:: DocumentObject
+   :show-inheritance:
    :members:
 
    .. method:: __setstate__(value)

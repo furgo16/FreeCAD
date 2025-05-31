@@ -11,12 +11,7 @@ This is the complete python API reference of the FreeCAD application
 .. toctree::
    :maxdepth: 4
 
-   FreeCAD.rst
-   Vector.rst
-   Placement.rst
-   Matrix.rst
-   Document.rst
-   DocumentObject.rst
+   FreeCAD_index.rst
    Mesh.rst
    Part.rst
    Sketch.rst

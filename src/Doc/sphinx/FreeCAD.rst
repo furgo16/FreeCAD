@@ -1,11 +1,7 @@
 The FreeCAD module
 ==================
-
-.. toctree::
-   :maxdepth: 4
-
 .. automodule:: FreeCAD
    :members:
-
-   .. autoclass:: Console
-      :members:
+   :undoc-members:
+   :show-inheritance:
+   :exclude-members: Vector, Matrix, Placement, Document, DocumentObject, Console
