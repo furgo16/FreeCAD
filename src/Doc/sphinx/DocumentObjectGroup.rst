@@ -10,9 +10,3 @@ capabilities from :class:`~FreeCAD.DocumentObject` and :class:`~FreeCAD.Property
    :undoc-members:
    :show-inheritance:
 
-   .. automethod:: addObject
-   .. automethod:: addObjects
-   .. automethod:: removeObject
-   .. automethod:: removeObjects
-   .. automethod:: getObjects
-   .. automethod:: hasObject
