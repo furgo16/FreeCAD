@@ -17,7 +17,14 @@ through the main ``FreeCAD`` module or its core ``App`` submodule.
    Placement
    Matrix
    Units
+   Extensions
+   DocumentObjectGroup
+   GeoFeature
+   Links
+   Expression
+   
    Console
+   Qt
 
 
 .. note::
