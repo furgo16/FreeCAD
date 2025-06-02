@@ -46,15 +46,3 @@ DocumentObjects through Python.
    :members:
    :undoc-members:
    :show-inheritance:
-
-.. autoclass:: LinkExtension
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. rubric:: Other Core Extensions
-
-.. autoclass:: SuppressibleExtension
-   :members:
-   :undoc-members:
-   :show-inheritance:

@@ -20,9 +20,6 @@ through the main ``FreeCAD`` module or its core ``App`` submodule.
    Extensions
    DocumentObjectGroup
    GeoFeature
-   Links
-   Expression
-   
    Console
    Qt
 
