@@ -141,11 +141,12 @@ extensions = [
     'sphinx_autodoc_typehints',
 ]
 
-autodoc_mock_imports = ["MeshGui",
-                        "ArchRebar",
-                        "FreeCADGui",
-                        "pivy"
-                        ]
+autodoc_mock_imports = [
+    "MeshGui",
+    "ArchRebar",
+    "FreeCADGui",
+    "pivy",
+]
 
 autodoc_default_options = {
     'members': True,
