@@ -9,7 +9,6 @@ under the top-level ``FreeCAD`` module for convenience.
    :members:
    :undoc-members:
    :show-inheritance:
-   :exclude-members: Vector, Matrix, Placement
 
    .. rubric:: Core Utility Classes (Examples)
 
@@ -28,7 +27,22 @@ under the top-level ``FreeCAD`` module for convenience.
       :undoc-members:
       :show-inheritance:
 
+   .. autoclass:: FreeCAD.Base.Matrix
+      :members:
+      :undoc-members:
+      :show-inheritance:
+
+   .. autoclass:: FreeCAD.Base.Placement
+      :members:
+      :undoc-members:
+      :show-inheritance:
+
    .. autoclass:: FreeCAD.Base.CoordinateSystem
+      :members:
+      :undoc-members:
+      :show-inheritance:
+
+   .. autoclass:: FreeCAD.Base.Vector
       :members:
       :undoc-members:
       :show-inheritance:

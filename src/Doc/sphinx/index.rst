@@ -10,19 +10,13 @@ This is the complete python API reference of the FreeCAD application
 
 .. toctree::
    :maxdepth: 4
+   :caption: FreeCAD Core API
 
-   FreeCAD_index.rst
-   Mesh.rst
-   Part.rst
-   Sketch.rst
-   TechDraw.rst
-   Draft.rst
-   DraftVecUtils.rst
-   DraftGeomUtils.rst
-   DraftTrackers.rst
-   DraftSnap.rst
-   DraftWorkingPlane.rst
-   Arch.rst
+   FreeCAD
+   toc_document_and_objects
+   toc_core_geometric_types
+   toc_core_utility_modules
+   toc_workbenches
 
 * :ref:`genindex`
 * :ref:`modindex`
