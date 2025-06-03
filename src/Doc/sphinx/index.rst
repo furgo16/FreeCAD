@@ -9,13 +9,18 @@ FreeCAD python API documentation
 This is the complete python API reference of the FreeCAD application
 
 .. toctree::
-   :maxdepth: 4
-   :caption: FreeCAD Core API
+   :maxdepth: 2
+   :caption: FreeCAD core API
 
    FreeCAD
    toc_document_and_objects
    toc_core_geometric_types
    toc_core_utility_modules
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Workbenches APIs
+
    toc_workbenches
 
 * :ref:`genindex`
