@@ -143,7 +143,6 @@ extensions = [
 
 autodoc_mock_imports = [
     "MeshGui",
-    "ArchRebar",
     "FreeCADGui",
     "pivy",
 ]
