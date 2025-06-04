@@ -331,7 +331,7 @@ pygments_style = 'sphinx'
 htmlhelp_basename = 'FreeCADdoc'
 
 # -- Options for HTML output ---------------------------------------------------
-html_theme = 'sphinx_rtd_theme' # Changed from 'default'
+html_theme = 'furo' # Changed from 'default'
 # html_style = 'freecad.css' # Commented out as per your previous step
 # html_favicon = "favicon.ico" # Commented out as per your previous step
 html_static_path = ['_static']
