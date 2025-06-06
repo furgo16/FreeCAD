@@ -1762,7 +1762,7 @@ def makeWindow(baseobj=None, width=None, height=None, parts=None, name=None):
 
     Parameters
     ----------
-    baseobj : Draft.Wire or Sketcher.Sketch, optional
+    baseobj : FreeCAD.DocumentObject (Draft.Wire or Sketcher.Sketch), optional
         The base object for the window. It should be a well-formed, closed
         Draft.Wire or Sketcher.Sketch object. Defaults to None.
     width : float, optional
