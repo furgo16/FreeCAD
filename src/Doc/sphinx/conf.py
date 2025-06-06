@@ -333,25 +333,41 @@ htmlhelp_basename = 'FreeCADdoc'
 # -- Options for HTML output ---------------------------------------------------
 html_theme = 'furo' # Changed from 'default'
 # html_style = 'freecad.css' # Commented out as per your previous step
-# html_favicon = "favicon.ico" # Commented out as per your previous step
 html_static_path = ['_static']
-html_title = "FreeCAD API documentation"
+html_favicon = "favicon.ico" # Relative to conf.py location
+# html_logo = "freecad.svg" # Relative to conf.py location
+html_title = "FreeCAD Python API documentation"
 html_show_sourcelink = True # Default is True, good for users
 html_show_sphinx = True     # Default is True
 html_show_copyright = True  # Default is True
 
-if html_theme == 'sphinx_rtd_theme':
-    html_theme_options = {
-        'logo_only': False,
-        'prev_next_buttons_location': 'bottom',
-        'style_external_links': False,
-        # 'style_nav_header_background': '#2980B9', # Example color
-        'collapse_navigation': True,
-        'sticky_navigation': True,
-        'navigation_depth': 4,
-        'includehidden': True,
-        'titles_only': False
-    }
+match html_theme:
+    case 'furo':
+        html_theme_options = {
+            'light_logo': 'freecad.svg', # Relative to _static path
+            'dark_logo': 'freecad.svg', # Relative to _static path
+            'sidebar_hide_name': True,
+            "top_of_page_buttons": ["view", "edit"], # The options below don't work with Furo
+            "source_repository": "https://github.com/FreeCAD/FreeCAD",
+            "source_branch": "main",
+            "source_directory": "src/Doc/sphinx/",
+            'announcement': (
+                "This documentation is hosted only for testing purposes. Do not rely on it yet for "
+                "developing FreeCAD extensions."
+            )
+        }
+    case 'sphinx_rtd_theme':
+        html_theme_options = {
+            'logo_only': False,
+            'prev_next_buttons_location': 'bottom',
+            'style_external_links': False,
+            # 'style_nav_header_background': '#2980B9', # Example color
+            'collapse_navigation': True,
+            'sticky_navigation': True,
+            'navigation_depth': 4,
+            'includehidden': True,
+            'titles_only': False
+        }
 
 
 # -- Options for LaTeX output --------------------------------------------------
