@@ -66,6 +66,8 @@
 #include <Base/PlacementPy.h>
 #include <Base/VectorPy.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <App/Link.h>
+#include <Base/Tools.h>
 
 #include "ImpExpDxf.h"
 
@@ -477,78 +479,45 @@ void ImpExpDxfRead::OnReadInsert(const Base::Vector3d& point,
                                  const std::string& name,
                                  double rotation)
 {
-    Collector->AddInsert(point, scale, name, rotation);
-}
-void ImpExpDxfRead::ExpandInsert(const std::string& name,
-                                 const Base::Matrix4D& transform,
-                                 const Base::Vector3d& point,
-                                 double rotation,
-                                 const Base::Vector3d& scale)
-{
-    if (!Blocks.contains(name)) {
-        ImportError("Reference to undefined or external block '%s'\n", name);
+    // Find the base object from our map of stored block definitions.
+    auto it = this->m_blockDefinitions.find(name);
+    if (it == m_blockDefinitions.end()) {
+        // This can happen if the block is defined but contains no geometry,
+        // so we didn't create a base object for it. We can safely skip it.
+        // A more robust solution might create an empty placeholder object.
+        // Also, xrefs will be reported as unsupported but still trigger OnReadInsert.
         return;
     }
-    Block& block = Blocks.at(name);
-    // Apply the scaling, rotation, and move before the OCSEnttityTransform and place the result io
-    // BaseEntityTransform,
-    Base::Matrix4D localTransform;
-    localTransform.scale(scale.x, scale.y, scale.z);
-    localTransform.rotZ(rotation);
-    localTransform.move(point[0], point[1], point[2]);
-    localTransform = transform * localTransform;
-    CommonEntityAttributes mainAttributes = m_entityAttributes;
-    for (const auto& [attributes, shapes] : block.Shapes) {
-        // Put attributes into m_entityAttributes after using the latter to set byblock values in
-        // the former.
-        m_entityAttributes = attributes;
-        m_entityAttributes.ResolveByBlockAttributes(mainAttributes);
+    App::DocumentObject* baseObject = it->second;
 
-        for (const TopoDS_Shape& shape : shapes) {
-            // TODO???: See the comment in TopoShape::makeTransform regarding calling
-            // Moved(identityTransform) on the new shape
-            Collector->AddObject(
-                BRepBuilderAPI_Transform(shape,
-                                         Part::TopoShape::convert(localTransform),
-                                         Standard_True)
-                    .Shape(),
-                "InsertPart");  // TODO: The collection should contain the nameBase to use
-        }
-    }
-    for (const auto& [attributes, featureBuilders] : block.FeatureBuildersList) {
-        // Put attributes into m_entityAttributes after using the latter to set byblock values in
-        // the former.
-        m_entityAttributes = attributes;
-        m_entityAttributes.ResolveByBlockAttributes(mainAttributes);
+    // Create a unique name for the link
+    std::string linkName = "Link_";
+    linkName += name;
+    linkName = document->getUniqueObjectName(linkName.c_str());
 
-        for (const FeaturePythonBuilder& featureBuilder : featureBuilders) {
-            // TODO: Any non-identity transform from the original entity record needs to be applied
-            // before OCSEntityTransform (which includes this INSERT's transform followed by the
-            // transform for the INSERT's context (i.e. from an outeer INSERT)
-            // TODO: Perhaps pass a prefix ("Insert") to the builder to make the object name so
-            // Draft objects in a block get named similarly to Shapes.
-            App::FeaturePython* feature = featureBuilder(localTransform);
-            if (feature != nullptr) {
-                // Note that the featureBuilder has already placed this object in the drawing as a
-                // top-level object, so we don't have to add them but we must place it in its layer
-                // and set its gui styles
-                MoveToLayer(feature);
-                ApplyGuiStyles(feature);
-            }
-        }
+    // Create the App::Link object directly in C++
+    App::Link* link = document->addObject<App::Link>(linkName.c_str());
+    if (!link) {
+        ImportError("Failed to create App::Link for block '%s'", name.c_str());
+        return;
     }
-    for (const auto& [attributes, inserts] : block.Inserts) {
-        // Put attributes into m_entityAttributes after using the latter to set byblock values in
-        // the former.
-        m_entityAttributes = attributes;
-        m_entityAttributes.ResolveByBlockAttributes(mainAttributes);
 
-        for (const Block::Insert& insert : inserts) {
-            // TODO: Apply the OCSOrientationTransform saved with the Insert statement to
-            // localTransform. (pass localTransform*insert.OCSDirectionTransform)
-            ExpandInsert(insert.Name, localTransform, insert.Point, insert.Rotation, insert.Scale);
-        }
-    }
+    // Configure the link
+    link->setLink(-1, baseObject);
+    link->LinkTransform.setValue(false);  // The link's placement will override the base's
+    link->Label.setValue(name.c_str());
+
+    // Calculate and set the placement
+    // Note: DXF rotation is in degrees. Base::Rotation expects radians.
+    Base::Placement pl(point, Base::Rotation(Base::Vector3d(0, 0, 1), Base::toRadians(rotation)));
+    link->Placement.setValue(pl);
+
+    // Set non-uniform scale if applicable
+    link->Scale.setValue(1.0);  // Default uniform scale
+    link->ScaleVector.setValue(scale);
+
+    // Add to the correct layer and apply styles
+    Collector->AddObject(link, "Link");
 }
 
 
@@ -764,6 +733,17 @@ void ImpExpDxfRead::DrawingEntityCollector::AddObject(const TopoDS_Shape& shape,
     Reader.MoveToLayer(pcFeature);
     Reader.ApplyGuiStyles(pcFeature);
 }
+
+void ImpExpDxfRead::DrawingEntityCollector::AddObject(App::DocumentObject* obj,
+                                                      const char* /*nameBase*/)
+{
+    // This overload is for C++ created objects like App::Link
+    // The object is already in the document, so we just need to style it and move it to a layer.
+    Reader.MoveToLayer(obj);
+    Reader.ApplyGuiStyles(dynamic_cast<Part::Feature*>(obj));
+    Reader.ApplyGuiStyles(dynamic_cast<App::FeaturePython*>(obj));
+}
+
 void ImpExpDxfRead::DrawingEntityCollector::AddObject(FeaturePythonBuilder shapeBuilder)
 {
     Reader.IncrementCreatedObjectCount();

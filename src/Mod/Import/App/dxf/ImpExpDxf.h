@@ -83,14 +83,6 @@ public:
                       const Base::Vector3d& scale,
                       const std::string& name,
                       double rotation) override;
-    // Expand a block reference; this should only happen when the collector draws to the document
-    // rather than saving things The transform should include the OCS Orientation transform for the
-    // insertion.
-    void ExpandInsert(const std::string& name,
-                      const Base::Matrix4D& transform,
-                      const Base::Vector3d& point,
-                      double rotation,
-                      const Base::Vector3d& scale);
     void OnReadDimension(const Base::Vector3d& start,
                          const Base::Vector3d& end,
                          const Base::Vector3d& point,
@@ -197,6 +189,8 @@ protected:
 
 private:
     std::map<std::string, Block> Blocks;
+    std::map<std::string, App::DocumentObject*> m_blockDefinitions;
+    App::DocumentObjectGroup* m_blockDefinitionGroup = nullptr;
     App::Document* document;
     std::string m_optionSource;
 
@@ -235,12 +229,15 @@ protected:
 
         // Called by OnReadXxxx functions to add Part objects
         virtual void AddObject(const TopoDS_Shape& shape, const char* nameBase) = 0;
+        // Called by OnReadInsert to add App::Link or other C++-created objects
+        virtual void AddObject(App::DocumentObject* obj, const char* nameBase) = 0;
         // Called by OnReadXxxx functions to add FeaturePython (draft) objects.
         // Because we can't readily copy Draft objects, this method instead takes a builder which,
         // when called, creates and returns the object.
         virtual void AddObject(FeaturePythonBuilder shapeBuilder) = 0;
         // Called by OnReadInsert to either remember in a nested block or expand the block into the
         // drawing
+        // This method is now obsolete with the App::Link implementation
         virtual void AddInsert(const Base::Vector3d& point,
                                const Base::Vector3d& scale,
                                const std::string& name,
@@ -261,13 +258,20 @@ protected:
         {}
 
         void AddObject(const TopoDS_Shape& shape, const char* nameBase) override;
+        void AddObject(App::DocumentObject* obj, const char* nameBase) override;
         void AddObject(FeaturePythonBuilder shapeBuilder) override;
         void AddInsert(const Base::Vector3d& point,
                        const Base::Vector3d& scale,
                        const std::string& name,
                        double rotation) override
         {
-            Reader.ExpandInsert(name, Reader.OCSOrientationTransform, point, rotation, scale);
+            // OnReadInsert now directly creates the App::Link and calls the DocumentObject
+            // overload. This AddInsert is now only called from inside a block collector and should
+            // do nothing.
+            (void)point;
+            (void)scale;
+            (void)name;
+            (void)rotation;
         }
     };
     class ShapeSavingEntityCollector: public DrawingEntityCollector
@@ -284,6 +288,12 @@ protected:
         void AddObject(const TopoDS_Shape& shape, const char* /*nameBase*/) override
         {
             ShapesList[Reader.m_entityAttributes].push_back(shape);
+        }
+
+        void AddObject(App::DocumentObject* obj, const char* nameBase) override
+        {
+            // A Link is not a shape to be merged, so pass to base class for standard handling.
+            DrawingEntityCollector::AddObject(obj, nameBase);
         }
 
     private:
@@ -337,6 +347,16 @@ protected:
         {
             FeatureBuildersList[Reader.m_entityAttributes].push_back(shapeBuilder);
         }
+
+        void AddObject(App::DocumentObject* /*obj*/, const char* /*nameBase*/) override
+        {
+            // This path should never be executed. Links and other fully-formed DocumentObjects
+            // are created from INSERT entities, not as part of a BLOCK *definition*. If this
+            // warning ever appears, it indicates a logic error in the importer.
+            Reader.ImportError(
+                "Internal logic error: Attempted to add a DocumentObject to a block definition.");
+        }
+
         void AddInsert(const Base::Vector3d& point,
                        const Base::Vector3d& scale,
                        const std::string& name,
