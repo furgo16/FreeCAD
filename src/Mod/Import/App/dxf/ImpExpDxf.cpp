@@ -56,6 +56,7 @@
 #include <App/Annotation.h>
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentObjectGroup.h>
 #include <App/DocumentObjectPy.h>
 #include <App/FeaturePythonPyImp.h>
 #include <Base/Console.h>
@@ -87,6 +88,15 @@ ImpExpDxfRead::ImpExpDxfRead(const std::string& filepath, App::Document* pcDoc)
 {
     setOptionSource("User parameter:BaseApp/Preferences/Mod/Draft");
     setOptions();
+}
+
+void ImpExpDxfRead::StartImport()
+{
+    CDxfRead::StartImport();
+    // Create a hidden group to store the base objects for block definitions
+    m_blockDefinitionGroup = static_cast<App::DocumentObjectGroup*>(
+        document->addObject("App::DocumentObjectGroup", "_BlockDefinitions"));
+    m_blockDefinitionGroup->Visibility.setValue(false);
 }
 
 bool ImpExpDxfRead::ReadEntitiesSection()
@@ -137,6 +147,22 @@ void ImpExpDxfRead::CombineShapes(std::list<TopoDS_Shape>& shapes, const char* n
     if (!comp.IsNull()) {
         Collector->AddObject(comp, nameBase);
     }
+}
+
+TopoDS_Shape ImpExpDxfRead::CombineShapesToCompound(const std::list<TopoDS_Shape>& shapes) const
+{
+    if (shapes.empty()) {
+        return TopoDS_Shape();
+    }
+    BRep_Builder builder;
+    TopoDS_Compound comp;
+    builder.MakeCompound(comp);
+    for (const auto& sh : shapes) {
+        if (!sh.IsNull()) {
+            builder.Add(comp, sh);
+        }
+    }
+    return comp;
 }
 
 void ImpExpDxfRead::setOptions()
@@ -203,29 +229,59 @@ void ImpExpDxfRead::setOptions()
 
 bool ImpExpDxfRead::OnReadBlock(const std::string& name, int flags)
 {
-    if ((flags & 0x04) != 0) {
-        // Note that this doesn't mean there are not entities in the block. I don't
-        // know if the external reference can be cached because there are two other bits
-        // here, 0x10 and 0x20, that seem to handle "resolved" external references.
+    if ((flags & 0x04) != 0) {  // Block is an Xref
         UnsupportedFeature("External (xref) BLOCK");
+        return SkipBlockContents();
     }
-    else if (!m_importHiddenBlocks && (flags & 0x01) != 0) {
-        // It is an anonymous block used to build dimensions, hatches, etc so we don't need it
-        // and don't want to be complaining about unhandled entity types.
-        // Note that if it *is* for a hatch we could actually import it and use it to draw a hatch.
+    if (!m_importHiddenBlocks && (name.find('*') == 0)) {
+        // It is an anonymous block used to build dimensions, hatches, etc.
+        return SkipBlockContents();
     }
-    else if (Blocks.contains(name)) {
-        ImportError("Duplicate block name '%s'\n", name);
+    if (m_blockDefinitions.count(name)) {
+        ImportError("Duplicate block name '%s'", name.c_str());
+        return SkipBlockContents();
     }
-    else {
-        Block& block = Blocks.insert(std::make_pair(name, Block(name, flags))).first->second;
-        BlockDefinitionCollector blockCollector(*this,
-                                                block.Shapes,
-                                                block.FeatureBuildersList,
-                                                block.Inserts);
-        return ReadBlockContents();
+
+    // Use the temporary Block struct and Collector to parse all contents into memory.
+    // We use the old 'Blocks' map for temporary storage during parsing.
+    Block& temporaryBlock = Blocks.insert(std::make_pair(name, Block(name, flags))).first->second;
+    BlockDefinitionCollector blockCollector(*this,
+                                            temporaryBlock.Shapes,
+                                            temporaryBlock.FeatureBuildersList,
+                                            temporaryBlock.Inserts);
+    if (!ReadBlockContents()) {
+        return false;  // Abort on parsing error
     }
-    return SkipBlockContents();
+
+    // Now, combine all collected primitive shapes into a single compound.
+    std::list<TopoDS_Shape> allShapes;
+    for (auto const& [attr, shapeList] : temporaryBlock.Shapes) {
+        allShapes.insert(allShapes.end(), shapeList.begin(), shapeList.end());
+    }
+
+    // TODO: The major regression is here. This logic does not handle nested
+    // INSERTs or FeatureBuilders within the block definition. We must add
+    // logic to recursively expand these into the 'allShapes' list.
+
+    if (allShapes.empty()) {
+        // For now, do not create a FreeCAD object for blocks that contain no
+        // primitive geometry. This avoids creating empty base objects.
+        return true;
+    }
+
+    TopoDS_Shape finalShape = CombineShapesToCompound(allShapes);
+
+    if (!finalShape.IsNull()) {
+        std::string objName = "BLOCK_";
+        objName += name;
+        auto pcFeature = document->addObject<Part::Feature>(objName.c_str());
+        pcFeature->Shape.setValue(finalShape);
+
+        m_blockDefinitionGroup->addObject(pcFeature);
+        m_blockDefinitions[name] = pcFeature;
+    }
+
+    return true;
 }
 
 void ImpExpDxfRead::OnReadLine(const Base::Vector3d& start,
@@ -740,8 +796,17 @@ void ImpExpDxfRead::DrawingEntityCollector::AddObject(App::DocumentObject* obj,
     // This overload is for C++ created objects like App::Link
     // The object is already in the document, so we just need to style it and move it to a layer.
     Reader.MoveToLayer(obj);
-    Reader.ApplyGuiStyles(dynamic_cast<Part::Feature*>(obj));
-    Reader.ApplyGuiStyles(dynamic_cast<App::FeaturePython*>(obj));
+
+    // Safely apply styles by checking the object's actual type
+    if (auto feature = dynamic_cast<Part::Feature*>(obj)) {
+        Reader.ApplyGuiStyles(feature);
+    }
+    else if (auto pyFeature = dynamic_cast<App::FeaturePython*>(obj)) {
+        Reader.ApplyGuiStyles(pyFeature);
+    }
+    else if (auto link = dynamic_cast<App::Link*>(obj)) {
+        Reader.ApplyGuiStyles(link);
+    }
 }
 
 void ImpExpDxfRead::DrawingEntityCollector::AddObject(FeaturePythonBuilder shapeBuilder)

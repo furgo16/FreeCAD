@@ -35,6 +35,11 @@
 
 class BRepAdaptor_Curve;
 
+namespace App
+{
+class Link;
+}
+
 namespace Import
 {
 class ImportExport ImpExpDxfRead: public CDxfRead
@@ -49,6 +54,8 @@ public:
     {
         Py_XDECREF(DraftModule);
     }
+
+    void StartImport() override;
 
     Py::Object getStatsAsPyObject();
 
@@ -110,6 +117,7 @@ private:
     // Combine all the shapes in the given shapes collection into a single shape, and AddObject that
     // to the drawing. unref's all the shapes in the collection, possibly freeing them.
     void CombineShapes(std::list<TopoDS_Shape>& shapes, const char* nameBase) const;
+    TopoDS_Shape CombineShapesToCompound(const std::list<TopoDS_Shape>& shapes) const;
     PyObject* DraftModule = nullptr;
 
 protected:
@@ -201,6 +209,8 @@ protected:
         m_stats.totalEntitiesCreated++;
     }
     virtual void ApplyGuiStyles(Part::Feature* /*object*/) const
+    {}
+    virtual void ApplyGuiStyles(App::Link* /*object*/) const
     {}
     virtual void ApplyGuiStyles(App::FeaturePython* /*object*/) const
     {}
