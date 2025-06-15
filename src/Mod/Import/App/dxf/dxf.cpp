@@ -2950,6 +2950,7 @@ bool CDxfRead::ReadBlocksSection()
         if (!IsObjectName("BLOCK")) {
             continue;  // quietly ignore non-BLOCK records
         }
+        ImportObservation("DEBUG: ReadBlocksSection found a BLOCK entity.\n");
         if (!ReadBlockInfo()) {
             ImportError("CDxfRead::DoRead() Failed to read block\n");
         }
