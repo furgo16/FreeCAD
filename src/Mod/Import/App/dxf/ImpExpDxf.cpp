@@ -602,8 +602,8 @@ void ImpExpDxfRead::OnReadInsert(const Base::Vector3d& point,
     link->Label.setValue(name.c_str());
 
     // Calculate and set the placement
-    // Note: DXF rotation is in degrees. Base::Rotation expects radians.
-    Base::Placement pl(point, Base::Rotation(Base::Vector3d(0, 0, 1), Base::toRadians(rotation)));
+    // The 'rotation' parameter from OnReadInsert is already in radians.
+    Base::Placement pl(point, Base::Rotation(Base::Vector3d(0, 0, 1), rotation));
     link->Placement.setValue(pl);
 
     // Set non-uniform scale if applicable
