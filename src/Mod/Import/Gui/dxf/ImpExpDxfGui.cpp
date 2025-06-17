@@ -98,16 +98,31 @@ void ImpExpDxfReadGui::ApplyGuiStyles(App::Link* object) const
                         attrs.m_Color);
     // ---------------------------
 
-    // Get the color specified by the DXF entity's attributes (e.g., from its layer).
-    Base::Color color = ObjectColor(m_entityAttributes.m_Color);
+    if (m_preserveColors) {
+        // The user wants to see colors from the DXF file.
+        // We style the link by setting its ViewProvider's properties directly,
+        // which is the same mechanism used for standard Part::Features.
+        Base::Color color = ObjectColor(m_entityAttributes.m_Color);
 
-    // Get the Link's material property and set its color.
-    App::Material mat = vpLink->ShapeMaterial.getValue();
-    mat.diffuseColor = color;
-    vpLink->ShapeMaterial.setValue(mat);
-
-    // Enable the material override to make the new color take effect.
-    vpLink->OverrideMaterial.setValue(true);
+        // The ViewProviderLink does not have LineColor/PointColor properties itself,
+        // but setting them on the base ViewProvider seems to be respected by the renderer.
+        // If this does not work, the properties would need to be added to ViewProviderLink.
+        if (auto* prop = view->getPropertyByName("LineColor")) {
+            static_cast<App::PropertyColor*>(prop)->setValue(color);
+        }
+        if (auto* prop = view->getPropertyByName("PointColor")) {
+            static_cast<App::PropertyColor*>(prop)->setValue(color);
+        }
+        if (auto* prop = view->getPropertyByName("ShapeColor")) {
+            static_cast<App::PropertyColor*>(prop)->setValue(color);
+        }
+        if (auto* prop = view->getPropertyByName("DrawStyle")) {
+            static_cast<App::PropertyEnumeration*>(prop)->setValue(GetDrawStyle());
+        }
+        if (auto* prop = view->getPropertyByName("Transparency")) {
+            static_cast<App::PropertyInteger*>(prop)->setValue(0);
+        }
+    }
 }
 
 void ImpExpDxfReadGui::ApplyGuiStyles(App::FeaturePython* object) const
