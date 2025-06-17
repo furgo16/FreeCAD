@@ -57,6 +57,7 @@
 #include <Gui/Application.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/ViewProviderDocumentObject.h>
+#include <Gui/ViewProviderLink.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 
 #include "ImpExpDxfGui.h"
@@ -82,23 +83,23 @@ void ImpExpDxfReadGui::ApplyGuiStyles(Part::Feature* object) const
 void ImpExpDxfReadGui::ApplyGuiStyles(App::Link* object) const
 {
     auto view = GuiDocument->getViewProvider(object);
-    if (!view) {
+
+    // The ViewProvider for an App::Link is a ViewProviderLink
+    auto* vpLink = dynamic_cast<Gui::ViewProviderLink*>(view);
+    if (!vpLink) {
         return;
     }
 
-    // Setting DrawStyle to "Original" tells the link's ViewProvider to
-    // use the appearance of the linked object. This is the correct
-    // way to handle visual instancing.
-    if (auto* prop = view->getPropertyByName("DrawStyle")) {
-        if (auto* penum = dynamic_cast<App::PropertyEnumeration*>(prop)) {
-            penum->setValue("Original");
-        }
-    }
+    // Get the color specified by the DXF entity's attributes (e.g., from its layer).
+    Base::Color color = ObjectColor(m_entityAttributes.m_Color);
 
-    // TODO: The link's view provider may still have color properties set,
-    // which can override the "Original" draw style. The C++ API does not appear
-    // to expose a way to reset these properties to their default state. This is
-    // a known limitation and can be addressed in the future if a method is found.
+    // Get the Link's material property and set its color.
+    App::Material mat = vpLink->ShapeMaterial.getValue();
+    mat.diffuseColor = color;
+    vpLink->ShapeMaterial.setValue(mat);
+
+    // Enable the material override to make the new color take effect.
+    vpLink->OverrideMaterial.setValue(true);
 }
 
 void ImpExpDxfReadGui::ApplyGuiStyles(App::FeaturePython* object) const

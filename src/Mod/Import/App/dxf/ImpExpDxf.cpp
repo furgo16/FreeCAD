@@ -254,6 +254,7 @@ void ImpExpDxfRead::ComposeSingleBlock(const std::string& blockName,
     auto blockCompound = document->addObject<Part::Compound>(
         document->getUniqueObjectName(compName.c_str()).c_str());
     m_blockDefinitionGroup->addObject(blockCompound);
+    IncrementCreatedObjectCount();
     blockCompound->Visibility.setValue(false);
     this->m_blockDefinitions[blockName] = blockCompound;
 
@@ -279,6 +280,7 @@ void ImpExpDxfRead::ComposeSingleBlock(const std::string& blockName,
                 link->Placement.setValue(pl);
                 link->ScaleVector.setValue(nestedInsert.Scale);
                 link->Visibility.setValue(false);
+                IncrementCreatedObjectCount();
                 m_blockDefinitionGroup->addObject(link);
                 linkedObjects.push_back(link);
             }
