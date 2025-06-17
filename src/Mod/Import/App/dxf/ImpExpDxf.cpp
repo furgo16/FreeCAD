@@ -286,20 +286,22 @@ void ImpExpDxfRead::ComposeSingleBlock(const std::string& blockName,
     }
 
     // 5. Create and Link Primitive Geometry.
-    for (const auto& shapeAttrPair : blockData.Shapes) {
-        TopoDS_Shape combinedShape = CombineShapesToCompound(shapeAttrPair.second);
-        if (!combinedShape.IsNull()) {
-            auto geomFeature = document->addObject<Part::Feature>(
-                (blockCompound->getNameInDocument() + std::string("_geom")).c_str());
-            geomFeature->Shape.setValue(combinedShape);
-            geomFeature->Visibility.setValue(false);
+    // Iterate through each attribute group (e.g., each layer within the block).
+    for (const auto& [attributes, shapeList] : blockData.Shapes) {
+        // Then, iterate through each shape in that group and create a separate feature for it.
+        for (const auto& shape : shapeList) {
+            if (!shape.IsNull()) {
+                auto geomFeature = document->addObject<Part::Feature>(
+                    (blockCompound->getNameInDocument() + std::string("_geom")).c_str());
+                geomFeature->Shape.setValue(shape);
+                geomFeature->Visibility.setValue(false);
 
-            // Apply styling to this primitive feature.
-            this->m_entityAttributes = shapeAttrPair.first;
-            this->ApplyGuiStyles(geomFeature);
+                // Apply styling to this primitive feature using its original attributes.
+                this->m_entityAttributes = attributes;
+                this->ApplyGuiStyles(geomFeature);
 
-            m_blockDefinitionGroup->addObject(geomFeature);
-            linkedObjects.push_back(geomFeature);
+                linkedObjects.push_back(geomFeature);
+            }
         }
     }
 
