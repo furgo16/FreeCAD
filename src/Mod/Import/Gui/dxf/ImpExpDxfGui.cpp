@@ -90,6 +90,14 @@ void ImpExpDxfReadGui::ApplyGuiStyles(App::Link* object) const
         return;
     }
 
+    // --- TEMPORARY DEBUGGING ---
+    const auto& attrs = m_entityAttributes;
+    Base::Console().log("Applying style for Link '%s'. Layer: '%s', DXF Color Index: %d\n",
+                        object->getNameInDocument(),
+                        attrs.m_Layer ? attrs.m_Layer->Name.c_str() : "None",
+                        attrs.m_Color);
+    // ---------------------------
+
     // Get the color specified by the DXF entity's attributes (e.g., from its layer).
     Base::Color color = ObjectColor(m_entityAttributes.m_Color);
 
