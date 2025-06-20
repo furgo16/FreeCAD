@@ -4312,3 +4312,22 @@ class DxfImportReporter:
         """
         output_string = self.to_console_string()
         FCC.PrintMessage(output_string)
+
+# #####################################################################
+# ## C++ Exporter Helper Functions
+# #####################################################################
+
+def _get_layer_name(obj):
+    """
+    Internal helper to get the layer/group name for an object.
+    Called from C++.
+    """
+    return getGroup(obj)
+
+
+def _get_aci_color(obj):
+    """
+    Internal helper to get the ACI color for an object.
+    Called from C++.
+    """
+    return getACI(obj)
