@@ -4498,6 +4498,10 @@ def _export_special_object(obj, writer_proxy):
             _export_arch_axis(obj, writer_proxy)
         elif obj_type == 'Space':
             _export_arch_space(obj, writer_proxy)
+        elif obj_type == 'PanelCut':
+            _export_arch_panel_cut(obj, writer_proxy)
+        elif obj_type == 'PanelSheet':
+            _export_arch_panel_sheet(obj, writer_proxy)
         else:
             # Fallback for unhandled FeaturePython objects: export their shape.
             if hasattr(obj, "Shape"):
@@ -4593,3 +4597,97 @@ def _export_arch_space(obj, writer_proxy):
 
     except Exception as e:
         FreeCAD.Console.PrintError(f"Error exporting Arch Space {obj.Name}: {e}\n")
+
+def _export_arch_panel_cut(obj, writer_proxy):
+    """
+    Specific helper for Arch::PanelCut objects.
+    Exports the panel's outline and cuts on specific layers.
+    """
+    if not hasattr(obj, "Proxy") or not hasattr(obj.Proxy, "outline"):
+        return
+
+    try:
+        # The outline shape is stored in the object's proxy
+        outline_shape = obj.Proxy.outline.copy()
+        outline_shape.Placement = obj.Placement.multiply(outline_shape.Placement)
+
+        # In a Panel, the outline is the largest wire, inner shapes are cuts.
+        # This logic finds the main outline and separates it from the cutouts.
+        outline_wire = None
+        cut_wires = []
+        max_diag = 0
+
+        if len(outline_shape.Wires) > 0:
+            for w in outline_shape.Wires:
+                if w.BoundBox.DiagonalLength > max_diag:
+                    max_diag = w.BoundBox.DiagonalLength
+                    if outline_wire:
+                        cut_wires.append(outline_wire)
+                    outline_wire = w
+                else:
+                    cut_wires.append(w)
+
+        # Export the main outline on the "Outlines" layer in blue
+        if outline_wire:
+            writer_proxy.setLayerName("Outlines")
+            writer_proxy.setColor(5) # ACI color 5 = blue
+            writer_proxy.exportShape(outline_wire)
+
+        # Export the cutouts on the "Cuts" layer in cyan
+        if cut_wires:
+            writer_proxy.setLayerName("Cuts")
+            writer_proxy.setColor(4) # ACI color 4 = cyan
+            for cut in cut_wires:
+                writer_proxy.exportShape(cut)
+
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Error exporting Arch PanelCut {obj.Name}: {e}\n")
+
+def _export_arch_panel_sheet(obj, writer_proxy):
+    """
+    Specific helper for Arch::PanelSheet objects.
+    Exports the sheet's border and tag, then processes its child PanelCut objects.
+    """
+    if not hasattr(obj, "Proxy"):
+        return
+
+    try:
+        # Execute the object if needed to generate its geometry
+        if not hasattr(obj.Proxy, "sheetborder"):
+            obj.Proxy.execute(obj)
+
+        # 1. Export the sheet's own border geometry
+        if hasattr(obj.Proxy, "sheetborder") and obj.Proxy.sheetborder:
+            border_shape = obj.Proxy.sheetborder.copy()
+            border_shape.Placement = obj.Placement
+            writer_proxy.setLayerName("Sheets")
+            writer_proxy.setColor(1) # ACI color 1 = red
+            writer_proxy.exportShape(border_shape)
+
+        # 2. Export the sheet's tag
+        if hasattr(obj.Proxy, "sheettag") and obj.Proxy.sheettag:
+            tag_shape = obj.Proxy.sheettag.copy()
+            tag_shape.Placement = obj.Placement.multiply(tag_shape.Placement)
+            writer_proxy.setLayerName("SheetTags")
+            writer_proxy.setColor(1) # ACI color 1 = red
+            writer_proxy.exportShape(tag_shape)
+
+        # 3. Process all child objects of the PanelSheet
+        for child in obj.Group:
+            if Draft.getType(child) == "PanelCut":
+                # Call the existing handler for PanelCut objects
+                _export_arch_panel_cut(child, writer_proxy)
+            elif child.isDerivedFrom("Part::Feature"):
+                # Handle other generic Part features within the sheet
+                layer_name = getGroup(child)
+                aci_color = getACI(child)
+                writer_proxy.setLayerName(layer_name)
+                writer_proxy.setColor(aci_color)
+
+                shape_copy = child.Shape.copy()
+                shape_copy.Placement = obj.Placement.multiply(shape_copy.Placement)
+                writer_proxy.exportShape(shape_copy)
+
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Error exporting Arch PanelSheet {obj.Name}: {e}\n")
+
