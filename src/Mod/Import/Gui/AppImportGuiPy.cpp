@@ -71,6 +71,7 @@
 #include <Mod/Import/App/WriterStep.h>
 #include <Mod/Import/App/dxf/ImpExpDxf.h>
 #include <Mod/Import/Gui/dxf/ImpExpDxfGui.h>
+#include <Mod/Import/App/dxf/DxfExecute.h>
 #include <Mod/Part/App/ImportIges.h>
 #include <Mod/Part/App/ImportStep.h>
 #include <Mod/Part/App/Interface.h>
@@ -672,18 +673,13 @@ private:
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/Mod/Draft");
             if (hGrp->GetBool("dxfproject", false)) {
-                Gui::MDIView* genericView = Gui::Application::Instance->activeView();
-                // Safely cast the generic MDIView to a specific 3D view
-                if (auto* view3D = dynamic_cast<Gui::View3DInventor*>(genericView)) {
-                    // Get the underlying viewer that contains the scene graph
-                    Gui::View3DInventorViewer* viewer = view3D->getViewer();
-                    if (viewer) {
-                        SoCamera* camera = viewer->getSoRenderManager()->getCamera();
-                        if (camera) {
+                if (Gui::MDIView* genericView = Gui::Application::Instance->activeView()) {
+                    if (auto* view3D = dynamic_cast<Gui::View3DInventor*>(genericView)) {
+                        if (SoCamera* camera =
+                                view3D->getViewer()->getSoRenderManager()->getCamera()) {
                             const SbRotation& rot = camera->orientation.getValue();
                             SbVec3f dir;
                             rot.multVec(SbVec3f(0, 0, -1), dir);
-
                             Base::Vector3d projectionDir(dir[0], dir[1], dir[2]);
                             writer.setProjectionDir(-projectionDir);
                         }
@@ -692,6 +688,7 @@ private:
             }
 
             Import::executeDxfExport(objectList, writer);
+
             writer.endRun();
         }
         catch (const Base::Exception& e) {

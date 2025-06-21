@@ -50,6 +50,7 @@
 
 #include <chrono>
 #include "dxf/ImpExpDxf.h"
+#include "dxf/DxfExecute.h"
 #include "SketchExportHelper.h"
 #include "dxf/DxfWriterProxy.h"  // The new proxy header
 #include <App/Annotation.h>
@@ -80,205 +81,6 @@
 
 namespace Import
 {
-
-static void executeDxfExport(PyObject* objectList, ImpExpDxfWrite& writer)
-{
-    PyObject* helperModule = PyImport_ImportModule("Draft.importDXF");
-    if (!helperModule) {
-        throw Py::ImportError("Could not import Draft.importDXF module.");
-    }
-
-    Py::Sequence list(objectList);
-
-    // --- Special case: If the list contains exactly one TechDraw Page, use a dedicated exporter.
-    bool pageExported = false;
-    if (list.size() == 1) {
-        PyObject* item = list.getItem(0).ptr();
-        App::DocumentObject* obj =
-            static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-        if (strcmp(obj->getTypeId().getName(), "TechDraw::DrawPage") == 0) {
-            PyObject* export_page_func =
-                PyObject_GetAttrString(helperModule, "_export_techdraw_page");
-            if (export_page_func && PyCallable_Check(export_page_func)) {
-
-                PyObject* writerProxyObj =
-                    DxfWriterProxy_Type.tp_new(&Import::DxfWriterProxy_Type, nullptr, nullptr);
-                ((Import::DxfWriterProxy*)writerProxyObj)->writer_inst = &writer;
-
-                PyObject* result =
-                    PyObject_CallFunctionObjArgs(export_page_func, item, writerProxyObj, NULL);
-
-                Py_XDECREF(result);
-                Py_DECREF(writerProxyObj);
-            }
-            Py_XDECREF(export_page_func);
-            if (PyErr_Occurred()) {
-                PyErr_Clear();
-            }
-            pageExported = true;
-        }
-    }
-
-    if (!pageExported) {
-        // --- If it wasn't a page, or if there were multiple objects, process the list normally.
-        for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-            PyObject* item = (*it).ptr();
-            App::DocumentObject* obj =
-                static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-
-            // --- Get Layer and Color (common for all types) ---
-            std::string layerName = "0";
-            int aciColor = 256;
-
-            PyObject* get_layer_func = PyObject_GetAttrString(helperModule, "_get_layer_name");
-            if (get_layer_func && PyCallable_Check(get_layer_func)) {
-                PyObject* pyLayerName = PyObject_CallFunctionObjArgs(get_layer_func, item, NULL);
-                if (pyLayerName && PyUnicode_Check(pyLayerName)) {
-                    layerName = PyUnicode_AsUTF8(pyLayerName);
-                }
-                Py_XDECREF(pyLayerName);
-            }
-            Py_XDECREF(get_layer_func);
-
-            PyObject* get_aci_func = PyObject_GetAttrString(helperModule, "_get_aci_color");
-            if (get_aci_func && PyCallable_Check(get_aci_func)) {
-                PyObject* pyAciColor = PyObject_CallFunctionObjArgs(get_aci_func, item, NULL);
-                if (pyAciColor && PyLong_Check(pyAciColor)) {
-                    aciColor = PyLong_AsLong(pyAciColor);
-                }
-                Py_XDECREF(pyAciColor);
-            }
-            Py_XDECREF(get_aci_func);
-            if (PyErr_Occurred()) {
-                PyErr_Clear();
-            }
-
-            writer.setLayerName(layerName);
-            writer.setColor(aciColor);
-
-            // --- Type Dispatcher ---
-            if (obj->isDerivedFrom(App::Annotation::getClassTypeId())) {
-                PyObject* get_text_data_func =
-                    PyObject_GetAttrString(helperModule, "_get_text_data");
-                if (get_text_data_func && PyCallable_Check(get_text_data_func)) {
-                    PyObject* text_data_list =
-                        PyObject_CallFunctionObjArgs(get_text_data_func, item, NULL);
-                    if (text_data_list && PyList_Check(text_data_list)) {
-                        Py_ssize_t size = PyList_Size(text_data_list);
-                        for (Py_ssize_t i = 0; i < size; ++i) {
-                            PyObject* text_tuple = PyList_GetItem(text_data_list, i);
-                            char* text_str;
-                            double p1[3], p2[3], height, rotation;
-                            int justification;
-                            if (PyArg_ParseTuple(text_tuple,
-                                                 "s(ddd)(ddd)did",
-                                                 &text_str,
-                                                 &p1[0],
-                                                 &p1[1],
-                                                 &p1[2],
-                                                 &p2[0],
-                                                 &p2[1],
-                                                 &p2[2],
-                                                 &height,
-                                                 &justification,
-                                                 &rotation)) {
-                                writer.writeText(text_str, p1, p2, height, justification);
-                            }
-                        }
-                    }
-                    Py_XDECREF(text_data_list);
-                }
-                Py_XDECREF(get_text_data_func);
-            }
-            else if (obj->getPropertyByName("Dimline") != nullptr) {
-                PyObject* get_dim_data_func =
-                    PyObject_GetAttrString(helperModule, "_get_dimension_data");
-                if (get_dim_data_func && PyCallable_Check(get_dim_data_func)) {
-                    PyObject* dim_tuple =
-                        PyObject_CallFunctionObjArgs(get_dim_data_func, item, NULL);
-                    if (dim_tuple && PyTuple_Check(dim_tuple)) {
-                        const char* dim_text;
-                        double text_mid[3], line_def[3], p1[3], p2[3];
-                        int dim_type;
-                        if (PyArg_ParseTuple(dim_tuple,
-                                             "(ddd)(ddd)(ddd)(ddd)si",
-                                             &text_mid[0],
-                                             &text_mid[1],
-                                             &text_mid[2],
-                                             &line_def[0],
-                                             &line_def[1],
-                                             &line_def[2],
-                                             &p1[0],
-                                             &p1[1],
-                                             &p1[2],
-                                             &p2[0],
-                                             &p2[1],
-                                             &p2[2],
-                                             &dim_text,
-                                             &dim_type)) {
-                            writer.writeLinearDim(text_mid, line_def, p1, p2, dim_text, dim_type);
-                        }
-                    }
-                    Py_XDECREF(dim_tuple);
-                }
-                Py_XDECREF(get_dim_data_func);
-            }
-            else if (auto* part = dynamic_cast<Part::Feature*>(obj)) {
-                TopoDS_Shape shapeToExport = part->Shape.getValue();
-                if (shapeToExport.IsNull()) {
-                    continue;
-                }
-
-                // --- NEW 3D-to-2D LOGIC ---
-                if (writer.optionMesh && shapeToExport.ShapeType() > TopAbs_FACE) {
-                    writer.writePolyFaceMesh(shapeToExport);
-                }
-                else if (writer.optionProject && shapeToExport.ShapeType() > TopAbs_FACE) {
-                    // Call a new Python helper to do the projection
-                    PyObject* project_func = PyObject_GetAttrString(helperModule, "_project_shape");
-                    if (project_func && PyCallable_Check(project_func)) {
-                        // Wrap the shape and direction to pass to Python
-                        Part::TopoShapePy* shapePy =
-                            new Part::TopoShapePy(new Part::TopoShape(shapeToExport));
-                        // Use the new public getter method to access the direction vector
-                        const Base::Vector3d& projectionDir = writer.getProjectionDir();
-                        Base::VectorPy* dirPy = new Base::VectorPy(projectionDir);
-
-                        PyObject* resultShapePy =
-                            PyObject_CallFunctionObjArgs(project_func, shapePy, dirPy, NULL);
-
-                        // If the call was successful and returned a shape, export it
-                        if (resultShapePy
-                            && PyObject_TypeCheck(resultShapePy, &(Part::TopoShapePy::Type))) {
-                            Part::TopoShape* ts =
-                                static_cast<Part::TopoShapePy*>(resultShapePy)->getTopoShapePtr();
-                            writer.exportShape(ts->getShape());
-                        }
-
-                        Py_XDECREF(shapePy);
-                        Py_XDECREF(dirPy);
-                        Py_XDECREF(resultShapePy);
-                    }
-                    Py_XDECREF(project_func);
-                }
-                else if (SketchExportHelper::isSketch(obj)) {
-                    writer.exportShape(SketchExportHelper::getFlatSketchXY(obj));
-                }
-                else {
-                    // Default behavior for 2D shapes or if options are off
-                    writer.exportShape(shapeToExport);
-                }
-            }
-
-            if (PyErr_Occurred()) {
-                PyErr_Clear();
-            }
-        }
-    }
-
-    Py_DECREF(helperModule);
-}
-
 class Module: public Py::ExtensionModule<Module>
 {
 public:
@@ -763,7 +565,6 @@ private:
         int version = 14;
         PyObject* use_lwpolyline = Py_False;
 
-        // Use a keyword-aware parser
         static const std::array<const char*, 5> kwd_list {"obj",
                                                           "name",
                                                           "version",
@@ -786,28 +587,26 @@ private:
         PyMem_Free(filename);
 
         if (!PyList_Check(objectList)) {
-            PyErr_SetString(PyExc_TypeError, "First argument must be a list of objects.");
+            PyErr_SetString(PyExc_TypeError, "First argument ('obj') must be a list of objects.");
             throw Py::Exception();
         }
 
         try {
             ImpExpDxfWrite writer(utf8_filename);
-            writer.setOptions();  // Reads non-GUI options
-
-            // Set parameters passed from Python
+            writer.setOptions();
             writer.setVersion(version);
             writer.setPolyOverride(use_lwpolyline == Py_True);
 
-            // Call the core export function
             executeDxfExport(objectList, writer);
 
             writer.endRun();
-            return Py::None();
         }
         catch (const Base::Exception& e) {
             e.setPyException();
             throw Py::Exception();
         }
+
+        return Py::None();
     }
 };
 
