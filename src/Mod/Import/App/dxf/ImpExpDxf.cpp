@@ -1230,11 +1230,7 @@ void ImpExpDxfWrite::writePolyFaceMesh(const TopoDS_Shape& shape)
         }
     }
 
-    // This part still requires implementation in CDxfWrite, but the data is now correct.
-    Base::Console().warning(
-        "DXF Exporter: Polyface mesh writing is not fully implemented in CDxfWrite yet.\n");
-    // Example of future call:
-    // writer.writePolyFace(vertices, faces);
+    writePolyFace(vertices, faces);
 }
 
 void ImpExpDxfWrite::exportShape(const TopoDS_Shape input)
