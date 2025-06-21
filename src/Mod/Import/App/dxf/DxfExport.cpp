@@ -1,5 +1,5 @@
 #include "PreCompiled.h"
-#include "dxf/DxfExecute.h"
+#include "dxf/DxfExport.h"
 #include "dxf/ImpExpDxf.h"
 #include "dxf/DxfWriterProxy.h"
 #include "SketchExportHelper.h"
@@ -8,19 +8,18 @@
 #include <App/DocumentObjectPy.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartFeaturePy.h>
+#include <Mod/Part/App/TopoShapePy.h>  // For wrapping/unwrapping shapes
+#include <Base/VectorPy.h>             // For wrapping/unwrapping vectors
 #include <Mod/TechDraw/App/DrawPage.h>
-#include <Mod/TechDraw/App/Projection.h>
 
-#include <BRepBuilderAPI_Transform.hxx>
+// For mesh logic
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_Array1OfTriangle.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <TopExp_Explorer.hxx>
-#include <gp_Ax1.hxx>
-#include <gp_Dir.hxx>
-#include <gp_Pnt.hxx>
-#include <gp_Trsf.hxx>
+
 
 namespace Import
 {
@@ -170,26 +169,31 @@ void executeDxfExport(PyObject* objectList, ImpExpDxfWrite& writer)
                     writer.writePolyFaceMesh(shapeToExport);
                 }
                 else if (writer.optionProject && shapeToExport.ShapeType() > TopAbs_FACE) {
-                    const Base::Vector3d& projectionDir = writer.getProjectionDir();
-                    gp_Dir dir(projectionDir.x, projectionDir.y, projectionDir.z);
-                    TopoDS_Shape projectedShape =
-                        TechDraw::projectEx(shapeToExport, dir, true).result;
-                    if (!projectedShape.IsNull()) {
-                        Base::Vector3d zAxis(0, 0, 1);
-                        double angle = projectionDir.getAngle(zAxis);
-                        if (std::abs(angle) > 1.0e-7) {
-                            Base::Vector3d axis = projectionDir.cross(zAxis);
-                            gp_Trsf trans;
-                            trans.SetRotation(
-                                gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(axis.x, axis.y, axis.z)),
-                                angle);
-                            BRepBuilderAPI_Transform brep_trans(projectedShape, trans);
-                            writer.exportShape(brep_trans.Shape());
+                    // Call the Python helper to perform the projection
+                    PyObject* project_func = PyObject_GetAttrString(helperModule, "_project_shape");
+                    if (project_func && PyCallable_Check(project_func)) {
+                        Part::TopoShapePy* shapePy =
+                            new Part::TopoShapePy(new Part::TopoShape(shapeToExport));
+                        const Base::Vector3d& projectionDir = writer.getProjectionDir();
+                        Base::VectorPy* dirPy = new Base::VectorPy(projectionDir);
+
+                        PyObject* resultShapePy = PyObject_CallFunctionObjArgs(project_func,
+                                                                               (PyObject*)shapePy,
+                                                                               (PyObject*)dirPy,
+                                                                               NULL);
+
+                        if (resultShapePy
+                            && PyObject_TypeCheck(resultShapePy, &(Part::TopoShapePy::Type))) {
+                            Part::TopoShape* ts =
+                                static_cast<Part::TopoShapePy*>(resultShapePy)->getTopoShapePtr();
+                            writer.exportShape(ts->getShape());
                         }
-                        else {
-                            writer.exportShape(projectedShape);
-                        }
+
+                        Py_XDECREF(shapePy);
+                        Py_XDECREF(dirPy);
+                        Py_XDECREF(resultShapePy);
                     }
+                    Py_XDECREF(project_func);
                 }
                 else if (SketchExportHelper::isSketch(obj)) {
                     writer.exportShape(SketchExportHelper::getFlatSketchXY(obj));

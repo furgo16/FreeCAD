@@ -50,9 +50,9 @@
 
 #include <chrono>
 #include "dxf/ImpExpDxf.h"
-#include "dxf/DxfExecute.h"
+#include "dxf/DxfExport.h"
 #include "SketchExportHelper.h"
-#include "dxf/DxfWriterProxy.h"  // The new proxy header
+#include "dxf/DxfWriterProxy.h"
 #include <App/Annotation.h>
 #include <App/Application.h>
 #include <App/Document.h>
