@@ -70,7 +70,7 @@
 #include <Mod/Import/App/WriterIges.h>
 #include <Mod/Import/App/WriterStep.h>
 #include <Mod/Import/App/dxf/ImpExpDxf.h>
-#include <Mod/Import/Gui/dxf/ImpExpDxfGui.h>
+#include <Mod/Import/App/dxf/ImpExpDxfGui.h>
 #include <Mod/Part/App/ImportIges.h>
 #include <Mod/Part/App/ImportStep.h>
 #include <Mod/Part/App/Interface.h>
@@ -80,15 +80,10 @@
 #include <Mod/Part/Gui/DlgImportStep.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 
-#include <Gui/View3DInventor.h>        // For View3DInventor
-#include <Gui/View3DInventorViewer.h>  // For View3DInventorViewer
-#include <Inventor/nodes/SoCamera.h>   // For SoCamera and SbRotation
-
 // Forward declaration for the core export function that lives in the App module.
 // This allows the Gui module to call it without creating a circular dependency.
-namespace Import
-{
-void executeDxfExport(PyObject* objectList, ImpExpDxfWrite& writer);
+namespace Import {
+    void executeDxfExport(PyObject* objectList, ImpExpDxfWrite& writer);
 }
 
 FC_LOG_LEVEL_INIT("Import", true, true)
@@ -122,8 +117,7 @@ public:
                            &Module::exporter,
                            "export(list,string) -- Export a list of objects into a single file.");
         add_varargs_method("ocaf", &Module::ocaf, "ocaf(string) -- Browse the ocaf structure.");
-        add_keyword_method("exportDxf",
-                           &Module::exportDxf,
+        add_keyword_method("exportDxf", &Module::exportDxf,
                            "exportDxf(obj=list, name=string, version=14, lwPoly=False): Exports "
                            "objects to a DXF file with GUI-awareness.");
         initialize("This module is the ImportGui module.");  // register with Python
@@ -637,21 +631,10 @@ private:
         int version = 14;
         PyObject* use_lwpolyline = Py_False;
 
-        static const std::array<const char*, 5> kwd_list {"obj",
-                                                          "name",
-                                                          "version",
-                                                          "lwPoly",
-                                                          nullptr};
-        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(),
-                                                 kwds.ptr(),
-                                                 "Oet|iO!",
-                                                 kwd_list,
-                                                 &objectList,
-                                                 "utf-8",
-                                                 &filename,
-                                                 &version,
-                                                 &PyBool_Type,
-                                                 &use_lwpolyline)) {
+        static const std::array<const char*, 5> kwd_list {"obj", "name", "version", "lwPoly", nullptr};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "Oet|iO!", kwd_list,
+                                                 &objectList, "utf-8", &filename,
+                                                 &version, &PyBool_Type, &use_lwpolyline)) {
             throw Py::Exception();
         }
 
@@ -669,25 +652,19 @@ private:
             writer.setVersion(version);
             writer.setPolyOverride(use_lwpolyline == Py_True);
 
-            ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Mod/Draft");
+            ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Draft");
             if (hGrp->GetBool("dxfproject", false)) {
-                Gui::MDIView* genericView = Gui::Application::Instance->activeView();
-                // Safely cast the generic MDIView to a specific 3D view
-                if (auto* view3D = dynamic_cast<Gui::View3DInventor*>(genericView)) {
-                    // Get the underlying viewer that contains the scene graph
-                    Gui::View3DInventorViewer* viewer = view3D->getViewer();
-                    if (viewer) {
-                        SoCamera* camera = viewer->getSoRenderManager()->getCamera();
-                        if (camera) {
-                            const SbRotation& rot = camera->orientation.getValue();
-                            SbVec3f dir;
-                            rot.multVec(SbVec3f(0, 0, -1), dir);
+                if (Gui::MDIView* view = Gui::Application::Instance->activeView()) {
+                    SoCamera* camera = view->getViewer()->getCamera();
+                    if (camera) {
+                        const SbRotation& rot = camera->orientation.getValue();
+                        SbVec3f dir;
+                        // The camera looks down its negative Z-axis. We get that axis from the rotation.
+                        rot.multVec(SbVec3f(0, 0, -1), dir);
 
-                            Base::Vector3d projectionDir(dir[0], dir[1], dir[2]);
-                            writer.setProjectionDir(-projectionDir);
-                        }
-                    }
+                        Base::Vector3d projectionDir(dir[0], dir[1], dir[2]);
+                        // For projection, we want the vector FROM the camera TO the model.
+                        writer.setProjectionDir(-projectionDir);
                 }
             }
 
@@ -704,6 +681,7 @@ private:
 
         return Py::None();
     }
+
 };
 
 PyObject* initModule()
