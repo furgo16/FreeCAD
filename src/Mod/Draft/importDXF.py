@@ -4484,3 +4484,112 @@ def _project_shape(shape, direction):
     except Exception as e:
         FreeCAD.Console.PrintError(f"DXF Projection failed: {e}\n")
         return None
+
+def _export_special_object(obj, writer_proxy):
+    """
+    Master dispatcher for special (FeaturePython) objects.
+    This function is called from C++ and uses Draft.getType() to route
+    to the correct specific export helper.
+    """
+    obj_type = Draft.getType(obj)
+
+    try:
+        if obj_type == 'AxisSystem':
+            _export_arch_axis(obj, writer_proxy)
+        elif obj_type == 'Space':
+            _export_arch_space(obj, writer_proxy)
+        else:
+            # Fallback for unhandled FeaturePython objects: export their shape.
+            if hasattr(obj, "Shape"):
+                writer_proxy.exportShape(obj.Shape)
+
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Error exporting special object {obj.Name} of type {obj_type}: {e}\n")
+
+
+def _export_arch_axis(obj, writer_proxy):
+    """
+    Specific helper to export an Arch::AxisSystem object.
+    This is called by the master dispatcher.
+    """
+    if not hasattr(obj, "Proxy") or not hasattr(obj, "ViewObject"):
+        return
+
+    try:
+        # Set the layer and color for all parts of this object
+        layer_name = getGroup(obj)
+        aci_color = getACI(obj)
+        writer_proxy.setLayerName(layer_name)
+        writer_proxy.setColor(aci_color)
+
+        # 1. Export the axis lines
+        axis_data = obj.Proxy.getAxisData(obj)
+        if not axis_data:
+            return
+
+        for axis_line in axis_data:
+            start_point = axis_line[0]
+            end_point = axis_line[1]
+            writer_proxy.addLine(start_point, end_point)
+
+        # 2. Export the text labels and bubbles
+        vobj = obj.ViewObject
+        if hasattr(vobj, "Proxy"):
+            font_size = float(vobj.FontSize)
+
+            for text_info in vobj.Proxy.getTextData():
+                text_string = text_info[0]
+                pos = text_info[1] + FreeCAD.Vector(0, -font_size / 2, 0)
+                p1 = (pos.x, pos.y, pos.z)
+                p2 = p1
+                writer_proxy.addText(text_string, p1, p2, font_size * 0.8, 1)
+
+            for shape in vobj.Proxy.getShapeData():
+                writer_proxy.exportShape(shape)
+
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Error exporting Arch AxisSystem {obj.Name}: {e}\n")
+
+def _export_arch_space(obj, writer_proxy):
+    """
+    Specific helper to export an Arch::Space object.
+    Exports the space's label and area as text.
+    """
+    if not hasattr(obj, "ViewObject"):
+        return
+
+    try:
+        # This logic is adapted from the legacy exporter
+        vobj = obj.ViewObject
+        if not hasattr(vobj, "Proxy"):
+            return
+
+        # Set layer and color
+        layer_name = getGroup(obj)
+        aci_color = getACI(obj, text=True) # Get text color
+        writer_proxy.setLayerName(layer_name)
+        writer_proxy.setColor(aci_color)
+
+        # Get all the text data from the Space's ViewObject proxy
+        rotation = obj.Placement.Rotation.Angle * 180.0 / math.pi
+        text1 = "".join(vobj.Proxy.text1.string.getValues())
+        text2 = "".join(vobj.Proxy.text2.string.getValues())
+        h1 = vobj.FirstLine.Value
+        h2 = vobj.FontSize.Value
+
+        # Calculate text positions
+        p2 = obj.Placement.multVec(vobj.Proxy.coords.translation.getValue())
+        lspc = obj.Placement.multVec(vobj.Proxy.header.translation.getValue())
+        p1 = p2 + lspc
+
+        # Write the first line of text (e.g., "Room")
+        writer_proxy.addText(text1, (p1.x, p1.y, p1.z), (p1.x, p1.y, p1.z), h1 * 0.8, 1, rotation)
+
+        # Write the second line of text (e.g., "12.34 m2")
+        if text2:
+            ofs = obj.Placement.Rotation.multVec(FreeCAD.Vector(0, -lspc.Length, 0))
+            p2_pos = p1 + ofs
+            writer_proxy.addText(text2, (p2_pos.x, p2_pos.y, p2_pos.z), (p2_pos.x, p2_pos.y, p2_pos.z), h2 * 0.8, 1, rotation)
+
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Error exporting Arch Space {obj.Name}: {e}\n")
