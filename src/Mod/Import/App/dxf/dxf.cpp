@@ -3399,4 +3399,7 @@ Base::Color CDxfRead::ObjectColor(ColorIndex_t index)
     // option of modifying the colors to contrast with the background at time of import.
     return result;
 }
+
+template void CDxfRead::UnsupportedFeature<>(const char*);
+
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
