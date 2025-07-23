@@ -698,12 +698,25 @@ public:
                 [](const QDockWidget *a, const QDockWidget *b) {
                     return !a->visibleRegion().isEmpty() && b->visibleRegion().isEmpty();
                 });
+
             for(auto dock : docks) {
-                if(mode == OverlayManager::OverlayMode::DisableAll)
-                    toggleOverlay(dock, ToggleMode::Unset);
-                else
-                    toggleOverlay(dock, ToggleMode::Set);
+                // Store the original visibility state of the panel.
+                bool wasVisible = dock->isVisible();
+
+                // Register the panel with the overlay system.
+                // This is needed for the manager to know about the panel.
+                // This call has the side effect of making the panel visible.
+                toggleOverlay(dock, ToggleMode::Set);
+
+                // If the panel was originally hidden, hide it again.
+                // This corrects the previous side effect and respects the user's layout.
+                if (!wasVisible) {
+                    dock->hide();
+                }
             }
+            // After all panels are registered, trigger a refresh to ensure
+            // the layout of the visible panels is calculated correctly.
+            refresh();
             return;
         }
         case OverlayManager::OverlayMode::ToggleAll:
