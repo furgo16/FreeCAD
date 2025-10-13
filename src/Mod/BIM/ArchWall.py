@@ -1879,6 +1879,7 @@ if FreeCAD.GuiUp:
         Handles both based and baseless walls.
         """
         import Part
+
         if hasattr(obj, "Base") and obj.Base:
             # For based walls, return the shape of the base object.
             # We assume it's a single line or wire for joining purposes.
@@ -1901,32 +1902,38 @@ if FreeCAD.GuiUp:
         solid_to_trim = base_solid
         tool_size = base_solid.BoundBox.DiagonalLength * 2
 
-        # A reference point guaranteed to be on the 'keep' side of the cut
-        ref_point = wall_placement.Base
-
         # --- Process the start ending ---
         is_start_null = obj.EndingStart.Base.Length < 1e-9 and obj.EndingStart.Rotation.Angle < 1e-9
         if not is_start_null:
-            start_plane_placement = wall_placement.multiply(obj.EndingStart)
+            global_plane_placement = wall_placement.multiply(obj.EndingStart)
 
-            # Create the cutting tool
-            cutting_tool_start = self._create_cutting_tool_from_plane(
-                start_plane_placement, ref_point, tool_size
+            # The reference point is the wall's other end, in global coordinates.
+            ref_point = obj.Proxy.calc_endpoints(obj)[1]
+
+            cutting_tool_global = self._create_cutting_tool_from_plane(
+                global_plane_placement, ref_point, tool_size
             )
 
-            solid_to_trim = solid_to_trim.common(cutting_tool_start)
+            cutting_tool_local = cutting_tool_global.copy()
+            cutting_tool_local.transformShape(wall_placement.inverse().toMatrix())
+
+            solid_to_trim = solid_to_trim.common(cutting_tool_local)
 
         # --- Process the end ending ---
         is_end_null = obj.EndingEnd.Base.Length < 1e-9 and obj.EndingEnd.Rotation.Angle < 1e-9
         if not is_end_null:
-            end_plane_placement = wall_placement.multiply(obj.EndingEnd)
+            global_plane_placement = wall_placement.multiply(obj.EndingEnd)
 
-            # Create the cutting tool
-            cutting_tool_end = self._create_cutting_tool_from_plane(
-                end_plane_placement, ref_point, tool_size
+            ref_point = obj.Proxy.calc_endpoints(obj)[0]  # Use the wall's start as the 'keep' point
+
+            cutting_tool_global = self._create_cutting_tool_from_plane(
+                global_plane_placement, ref_point, tool_size
             )
 
-            solid_to_trim = solid_to_trim.common(cutting_tool_end)
+            cutting_tool_local = cutting_tool_global.copy()
+            cutting_tool_local.transformShape(wall_placement.inverse().toMatrix())
+
+            solid_to_trim = solid_to_trim.common(cutting_tool_local)
 
         return solid_to_trim
 
@@ -1937,18 +1944,17 @@ if FreeCAD.GuiUp:
         """
         import Part
 
-        # Create the four corners of a large, bounded plane in its local XY plane.
+        # Create a bounded face and move it to the final cutting position.
         p1 = FreeCAD.Vector(-tool_size / 2, -tool_size / 2, 0)
         p2 = FreeCAD.Vector(tool_size / 2, -tool_size / 2, 0)
         p3 = FreeCAD.Vector(tool_size / 2, tool_size / 2, 0)
         p4 = FreeCAD.Vector(-tool_size / 2, tool_size / 2, 0)
-
-        # Create a bounded face and move it to the final cutting position.
         bounded_face = Part.Face(Part.makePolygon([p1, p2, p3, p4, p1]))
         bounded_face.Placement = cutting_placement
 
-        # Create the half-space solid from the bounded face.
-        # This produces a finite, extruded solid.
+        # Logic to determine extrusion direction
+        # Call makeHalfSpace on the bounded face. This will create a finite solid
+        # representing the "keep" volume, which is the correct tool for a .common() operation.
         cutting_tool = bounded_face.makeHalfSpace(ref_point)
 
         return cutting_tool
