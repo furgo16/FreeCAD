@@ -2,13 +2,38 @@
 
 """GUI command for the new Annotation Style Manager."""
 
+import os
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui, QtWidgets
 
 from draftutils import annotation_styles
+from draftutils import utils
 from draftutils.translate import translate
-import os
+
+# A map defining the widget type for each style property.
+# This helps automate getting/setting values from the UI form.
+PROPERTY_MAP = {
+    "ScaleMultiplier": "float",
+    "FontName": "font",
+    "FontSize": "length",
+    "LineSpacing": "float",
+    "TextColor": "color",
+    "ShowLine": "bool",
+    "LineWidth": "int",
+    "LineColor": "color",
+    "ArrowTypeStart": "index",
+    "ArrowSizeStart": "length",
+    "ArrowTypeEnd": "index",
+    "ArrowSizeEnd": "length",
+    "ShowUnit": "bool",
+    "UnitOverride": "str",
+    "Decimals": "int",
+    "DimOvershoot": "length",
+    "ExtLines": "length",
+    "ExtOvershoot": "length",
+    "TextSpacing": "length",
+}
 
 
 class AnnotationStyleManagerDialog:
@@ -35,6 +60,7 @@ class AnnotationStyleManagerDialog:
 
         self._populate_styles()
         self._connect_signals()
+        self.on_selection_changed(None, None)  # Set initial state
 
     def _populate_styles(self):
         """Load styles from all sources and populate the tree widget."""
@@ -69,9 +95,10 @@ class AnnotationStyleManagerDialog:
 
         for name in sorted(self.system_styles.keys()):
             item = QtWidgets.QTreeWidgetItem(self.system_root, [name])
-            # Make system styles appear italicized to indicate they are read-only
-            font.setItalic(True)
-            item.setFont(0, font)
+            # Make system styles italic
+            italic_font = QtGui.QFont(font)
+            italic_font.setItalic(True)
+            item.setFont(0, italic_font)
 
         self.tree.expandAll()
 
@@ -84,9 +111,6 @@ class AnnotationStyleManagerDialog:
         self.form.pushButton_Import.clicked.connect(self.on_import)
         self.form.pushButton_Export.clicked.connect(self.on_export)
         self.tree.currentItemChanged.connect(self.on_selection_changed)
-
-        # TODO: Connect signals for all property editor widgets (e.g., self.form.FontSize.textChanged)
-        # to an `on_property_changed` slot to update the style data in real-time.
 
     def on_selection_changed(self, current, previous):
         """Handle when the user selects a different style in the tree."""
@@ -104,7 +128,7 @@ class AnnotationStyleManagerDialog:
     def _update_ui_state(self):
         """Update the enabled/disabled state of all buttons based on selection."""
         item = self.tree.currentItem()
-        is_style = item and item.parent() is not None
+        is_style = item is not None and item.parent() is not None
         is_project_style = is_style and item.parent() is self.project_root
         is_user_style = is_style and item.parent() is self.user_root
         is_system_style = is_style and item.parent() is self.system_root
@@ -123,26 +147,82 @@ class AnnotationStyleManagerDialog:
 
     def _populate_editor_from_style(self, item):
         """Fill the property editor fields with values from the selected style."""
-        # TODO: Implement the logic to get the style dict and set all widget values.
-        # This will be similar to the old `fill_editor` method.
-        # For example:
-        # style_name = item.text(0).split(" (default)")[0]
-        # if item.parent() is self.project_root:
-        #     style_data = self.project_styles.get(style_name, {})
-        # ...
-        # self.form.FontSize.setText(str(style_data.get("FontSize", 0)))
-        pass
+        style_name = item.text(0).split(" (default)")[0]
+        style_data = {}
+        if item.parent() is self.project_root:
+            style_data = self.project_styles.get(style_name, {})
+        elif item.parent() is self.user_root:
+            style_data = self.user_styles.get(style_name, {})
+        elif item.parent() is self.system_root:
+            style_data = self.system_styles.get(style_name, {})
+
+        for key, prop_type in PROPERTY_MAP.items():
+            control = getattr(self.form, key)
+            value = style_data.get(key)
+            if value is None:
+                continue
+
+            if prop_type == "str":
+                control.setText(value)
+            elif prop_type == "font":
+                control.setCurrentFont(QtGui.QFont(value))
+            elif prop_type == "color":
+                color = QtGui.QColor(utils.rgba_to_argb(value))
+                control.setProperty("color", color)
+            elif prop_type == "int":
+                control.setValue(value)
+            elif prop_type == "float":
+                control.setValue(value)
+            elif prop_type == "length":
+                control.setText(App.Units.Quantity(value, App.Units.Length).UserString)
+            elif prop_type == "bool":
+                control.setChecked(value)
+            elif prop_type == "index":
+                control.setCurrentIndex(value)
 
     def _save_editor_to_style(self, item):
         """Save the current values from the property editor into the style data dict."""
-        # TODO: Implement the logic to get all widget values and update the correct
-        # self.project_styles or self.user_styles dictionary.
-        # This will be similar to the old `get_editor_values` method.
-        pass
+        style_name = item.text(0).split(" (default)")[0]
+        style_data = {}
+
+        for key, prop_type in PROPERTY_MAP.items():
+            control = getattr(self.form, key)
+            value = None
+            if prop_type == "str":
+                value = control.text()
+            elif prop_type == "font":
+                value = control.currentFont().family()
+            elif prop_type == "color":
+                value = utils.argb_to_rgba(control.property("color").rgba())
+            elif prop_type == "int":
+                value = control.value()
+            elif prop_type == "float":
+                value = control.value()
+            elif prop_type == "length":
+                value = App.Units.Quantity(control.text()).Value
+            elif prop_type == "bool":
+                value = control.isChecked()
+            elif prop_type == "index":
+                value = control.currentIndex()
+            style_data[key] = value
+
+        if item.parent() is self.project_root:
+            self.project_styles[style_name] = style_data
+        elif item.parent() is self.user_root:
+            self.user_styles[style_name] = style_data
 
     def _clear_and_disable_editor(self):
         """Clear all fields and disable the property editor."""
-        # TODO: Clear all input fields in the property editor.
+        for key, prop_type in PROPERTY_MAP.items():
+            control = getattr(self.form, key)
+            if prop_type in ["str", "length"]:
+                control.setText("")
+            elif prop_type in ["int", "float"]:
+                control.setValue(0)
+            elif prop_type == "bool":
+                control.setChecked(False)
+            elif prop_type == "index":
+                control.setCurrentIndex(0)
         self.form.scrollArea_Properties.setEnabled(False)
 
     def on_new(self):
