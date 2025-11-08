@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AnnotationStyleManager</class>
+ <widget class="QDialog" name="AnnotationStyleManager">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>650</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Annotation Style Manager</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout_Main">
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_Main" stretch="1,0,2">
+     <item>
+      <widget class="QGroupBox" name="groupBox_Management">
+       <property name="title">
+        <string>Style Management</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_Tree">
+        <item>
+         <widget class="QTreeWidget" name="treeWidget_Styles">
+          <property name="headerHidden">
+           <bool>true</bool>
+          </property>
+          <column>
+           <property name="text">
+            <string notr="true">Styles</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_Actions">
+          <item>
+           <widget class="QPushButton" name="pushButton_New">
+            <property name="toolTip">
+             <string>Create a new style in the selected library</string>
+            </property>
+            <property name="text">
+             <string>New</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_Delete">
+            <property name="toolTip">
+             <string>Delete the selected style</string>
+            </property>
+            <property name="text">
+             <string>Delete</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_Rename">
+            <property name="toolTip">
+             <string>Rename the selected style</string>
+            </property>
+            <property name="text">
+             <string>Rename</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton_SetDefault">
+          <property name="toolTip">
+           <string>Set the selected style as the default for new documents</string>
+          </property>
+          <property name="text">
+           <string>Set Default</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <layout class="QVBoxLayout" name="verticalLayout_Center">
+       <item>
+        <spacer name="verticalSpacer_1">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="pushButton_Import">
+         <property name="toolTip">
+          <string>Copy the selected library style into the current project</string>
+         </property>
+         <property name="text">
+          <string>&lt;&lt; Import</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="pushButton_Export">
+         <property name="toolTip">
+          <string>Copy the selected project style to your user library</string>
+         </property>
+         <property name="text">
+          <string>Export &gt;&gt;</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_2">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox_Properties">
+       <property name="title">
+        <string>Style Properties</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_Right">
+        <item>
+         <widget class="QScrollArea" name="scrollArea_Properties">
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>490</width>
+             <height>540</height>
+            </rect>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_ScrollContents">
+            <item>
+             <widget class="QGroupBox" name="groupBox_General">
+              <property name="title">
+               <string>General</string>
+              </property>
+              <layout class="QFormLayout" name="formLayout_General">
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_ScaleMultiplier">
+                 <property name="text">
+                  <string>Scale Multiplier</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QDoubleSpinBox" name="ScaleMultiplier"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBox_Texts">
+              <property name="title">
+               <string>Texts</string>
+              </property>
+              <layout class="QFormLayout" name="formLayout_Texts">
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_FontName">
+                 <property name="text">
+                  <string>Font Name</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QFontComboBox" name="FontName"/>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="label_FontSize">
+                 <property name="text">
+                  <string>Font Size</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="Gui::InputField" name="FontSize"/>
+               </item>
+               <item row="2" column="0">
+                <widget class="QLabel" name="label_LineSpacing">
+                 <property name="text">
+                  <string>Line Spacing</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="2" column="1">
+                <widget class="QDoubleSpinBox" name="LineSpacing"/>
+               </item>
+               <item row="3" column="0">
+                <widget class="QLabel" name="label_TextColor">
+                 <property name="text">
+                  <string>Text Color</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="3" column="1">
+                <widget class="Gui::ColorButton" name="TextColor"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBox_LinesAndArrows">
+              <property name="title">
+               <string>Lines and Arrows</string>
+              </property>
+              <layout class="QFormLayout" name="formLayout_LinesAndArrows">
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_ShowLine">
+                 <property name="text">
+                  <string>Show Dimension Line</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QCheckBox" name="ShowLine"/>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="label_LineWidth">
+                 <property name="text">
+                  <string>Line Width</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="QSpinBox" name="LineWidth"/>
+               </item>
+               <item row="2" column="0">
+                <widget class="QLabel" name="label_LineColor">
+                 <property name="text">
+                  <string>Line Color</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="2" column="1">
+                <widget class="Gui::ColorButton" name="LineColor"/>
+               </item>
+               <item row="3" column="0">
+                <widget class="QLabel" name="label_ArrowTypeStart">
+                 <property name="text">
+                  <string>Start Arrow Type</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="3" column="1">
+                <widget class="QComboBox" name="ArrowTypeStart"/>
+               </item>
+               <item row="4" column="0">
+                <widget class="QLabel" name="label_ArrowSizeStart">
+                 <property name="text">
+                  <string>Start Arrow Size</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="4" column="1">
+                <widget class="Gui::InputField" name="ArrowSizeStart"/>
+               </item>
+               <item row="5" column="0">
+                <widget class="QLabel" name="label_ArrowTypeEnd">
+                 <property name="text">
+                  <string>End Arrow Type</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="5" column="1">
+                <widget class="QComboBox" name="ArrowTypeEnd"/>
+               </item>
+               <item row="6" column="0">
+                <widget class="QLabel" name="label_ArrowSizeEnd">
+                 <property name="text">
+                  <string>End Arrow Size</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="6" column="1">
+                <widget class="Gui::InputField" name="ArrowSizeEnd"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBox_Units">
+              <property name="title">
+               <string>Units</string>
+              </property>
+              <layout class="QFormLayout" name="formLayout_Units">
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_ShowUnit">
+                 <property name="text">
+                  <string>Show Unit</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QCheckBox" name="ShowUnit"/>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="label_UnitOverride">
+                 <property name="text">
+                  <string>Unit Override</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="QLineEdit" name="UnitOverride"/>
+               </item>
+               <item row="2" column="0">
+                <widget class="QLabel" name="label_Decimals">
+                 <property name="text">
+                  <string>Decimals</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="2" column="1">
+                <widget class="QSpinBox" name="Decimals"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBox_DimensionDetails">
+              <property name="title">
+               <string>Dimension Details</string>
+              </property>
+              <layout class="QFormLayout" name="formLayout_DimensionDetails">
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_DimOvershoot">
+                 <property name="text">
+                  <string>Dim Overshoot</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="Gui::InputField" name="DimOvershoot"/>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="label_ExtLines">
+                 <property name="text">
+                  <string>Ext Lines</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="Gui::InputField" name="ExtLines"/>
+               </item>
+               <item row="2" column="0">
+                <widget class="QLabel" name="label_ExtOvershoot">
+                 <property name="text">
+                  <string>Ext Overshoot</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="2" column="1">
+                <widget class="Gui::InputField" name="ExtOvershoot"/>
+               </item>
+               <item row="3" column="0">
+                <widget class="QLabel" name="label_TextSpacing">
+                 <property name="text">
+                  <string>Text Spacing</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="3" column="1">
+                <widget class="Gui::InputField" name="TextSpacing"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <spacer name="verticalSpacer_Scroll">
+              <property name="orientation">
+               <enum>Qt::Vertical</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>40</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Gui::InputField</class>
+   <extends>QLineEdit</extends>
+   <header>Gui/InputField.h</header>
+  </customwidget>
+  <customwidget>
+   <class>Gui::ColorButton</class>
+   <extends>QPushButton</extends>
+   <header>Gui/Widgets.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>AnnotationStyleManager</receiver>
+   <slot>accept()</slot>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>AnnotationStyleManager</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

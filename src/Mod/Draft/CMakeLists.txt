@@ -257,6 +257,7 @@ SET(Modifier_tools
 SET(Draft_GUI_tools
     draftguitools/__init__.py
     draftguitools/gui_annotationstyleeditor.py
+    draftguitools/gui_annotationstylemanager.py
     draftguitools/gui_base.py
     draftguitools/gui_base_original.py
     draftguitools/gui_tool_utils.py
