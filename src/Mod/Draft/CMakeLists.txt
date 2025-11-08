@@ -55,6 +55,7 @@ SET(Draft_tests
     drafttests/auxiliary.py
     drafttests/draft_test_objects.py
     drafttests/test_airfoildat.py
+    drafttests/test_annotation_styles.py
     drafttests/test_array.py
     drafttests/test_base.py
     drafttests/test_creation.py
@@ -74,6 +75,7 @@ SET(Draft_tests
 
 SET(Draft_utilities
     draftutils/__init__.py
+    draftutils/annotation_styles.py
     draftutils/grid_observer.py
     draftutils/groups.py
     draftutils/gui_utils.py
