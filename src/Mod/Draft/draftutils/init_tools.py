@@ -72,7 +72,21 @@ def get_draft_drawing_commands():
 
 def get_draft_annotation_commands():
     """Return the annotation commands list."""
-    return ["Draft_Text", "Draft_Dimension", "Draft_Label", "Draft_AnnotationStyleEditor"]
+    return [
+        "Draft_Text",
+        "Draft_Dimension",
+        "Draft_Label",
+    ]
+
+
+def get_draft_annotation_style_commands():
+    """Return the annotation style management commands list."""
+    return [
+        "Draft_AnnotationStyleEditor",
+        "Draft_AnnotationSelector",
+        "Draft_ApplyStyleToSelection",
+        "Draft_ApplyStyleToAll",
+    ]
 
 
 def get_draft_modification_commands():

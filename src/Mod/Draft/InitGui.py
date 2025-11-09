@@ -45,6 +45,9 @@ class DraftWorkbench(FreeCADGui.Workbench):
         self.__class__.MenuText = QT_TRANSLATE_NOOP("draft", "Draft")
         self.__class__.ToolTip = QT_TRANSLATE_NOOP("draft", _tooltip)
 
+        # Ensure the one-time injection logic runs only once per session
+        self.style_widget_injected = False
+
     def Initialize(self):
         """When the workbench is first loaded."""
 
@@ -85,6 +88,8 @@ class DraftWorkbench(FreeCADGui.Workbench):
         try:
             import Draft_rc
             import DraftTools
+            from draftguitools import gui_annotationstylemanager
+            from draftguitools import gui_annotationstyletoolbar
             import DraftGui
 
             FreeCADGui.addLanguagePath(":/translations")
@@ -113,6 +118,11 @@ class DraftWorkbench(FreeCADGui.Workbench):
         )
         it.init_toolbar(
             self, QT_TRANSLATE_NOOP("Workbench", "Draft Annotation"), self.annotation_commands
+        )
+        it.init_toolbar(
+            self,
+            QT_TRANSLATE_NOOP("Workbench", "Annotation Styles"),
+            it.get_draft_annotation_style_commands(),
         )
         it.init_toolbar(
             self, QT_TRANSLATE_NOOP("Workbench", "Draft Modification"), self.modification_commands
@@ -165,6 +175,55 @@ class DraftWorkbench(FreeCADGui.Workbench):
 
     def Activated(self):
         """When entering the workbench."""
+
+        def QT_TRANSLATE_NOOP(context, text):
+            return text
+
+        # --- One-time injection for the annotation style widget ---
+        if not self.style_widget_injected:
+            FreeCAD.Console.PrintLog(
+                "Draft workbench activated. Attempting to inject style widget...\n"
+            )
+            try:
+                from PySide import QtWidgets
+                from draftguitools import gui_annotationstyletoolbar
+
+                main_window = FreeCADGui.getMainWindow()
+                placeholder_cmd = gui_annotationstyletoolbar.SELECTOR_INSTANCE
+                if not placeholder_cmd:
+                    FreeCAD.Console.PrintWarning(
+                        "AnnotationSelector instance not found. Injection aborted.\n"
+                    )
+                    self.style_widget_injected = True  # Don't try again
+                    return
+
+                injected = False
+                # Note: We search for the toolbar by name now, which is more direct.
+                toolbar_name = QT_TRANSLATE_NOOP("Workbench", "Annotation Styles")
+                for toolbar in main_window.findChildren(QtWidgets.QToolBar):
+                    if toolbar.windowTitle() == toolbar_name:
+                        for action in toolbar.actions():
+                            if action.data() == "Draft_AnnotationSelector":
+                                FreeCAD.Console.PrintLog(
+                                    "Found placeholder action in '{}' toolbar.\n".format(
+                                        toolbar_name
+                                    )
+                                )
+                                toolbar.insertWidget(action, placeholder_cmd.style_combo)
+                                action.setVisible(False)
+                                placeholder_cmd.update_style_list()
+                                injected = True
+                                FreeCAD.Console.PrintLog("Successfully injected style widget.\n")
+                                break  # Action found, stop searching
+                        if injected:
+                            break  # Toolbar found, stop searching
+                if not injected:
+                    FreeCAD.Console.PrintWarning(
+                        "Could not find placeholder action to inject style widget. Injection failed.\n"
+                    )
+            finally:
+                self.style_widget_injected = True  # Ensure this logic never runs again
+
         if hasattr(FreeCADGui, "draftToolBar"):
             FreeCADGui.draftToolBar.Activated()
         if hasattr(FreeCADGui, "Snapper"):

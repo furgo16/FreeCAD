@@ -89,7 +89,6 @@ from draftguitools.gui_heal import Heal
 from draftguitools.gui_dimension_ops import Draft_FlipDimension
 from draftguitools.gui_lineslope import Draft_Slope
 import draftguitools.gui_arrays
-import draftguitools.gui_annotationstyleeditor
 from draftguitools.gui_layers import Layer
 
 # ---------------------------------------------------------------------------
