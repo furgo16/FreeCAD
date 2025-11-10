@@ -318,17 +318,23 @@ SET(Draft_SRCS_all
 # Maybe we don't need this anymore? For example, FEM doesn't use it.
 SOURCE_GROUP("" FILES ${Draft_SRCS_all})
 
+SET(Draft_presets
+    Resources/presets/SystemAnnotationStyles.json
+)
+
 SET(DraftGuiIcon_SVG
     Resources/icons/DraftWorkbench.svg
 )
 
 ADD_CUSTOM_TARGET(Draft ALL
-    SOURCES ${Draft_SRCS_all} ${Draft_QRC_SRCS} ${DraftGuiIcon_SVG}
+    SOURCES ${Draft_SRCS_all} ${Draft_QRC_SRCS} ${DraftGuiIcon_SVG} ${Draft_presets}
 )
 
 fc_copy_sources(Draft "${CMAKE_BINARY_DIR}/Mod/Draft" ${Draft_SRCS_all})
 
+# Populate the build tree with the Draft workbench resources.
 fc_copy_sources(Draft "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Mod/Draft" ${DraftGuiIcon_SVG})
+fc_copy_sources(Draft "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Mod/Draft" ${Draft_presets})
 
 IF (BUILD_GUI)
     fc_target_copy_resource(Draft

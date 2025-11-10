@@ -2,16 +2,61 @@
 
 """GUI commands for the new Annotation Style Toolbar."""
 
+import copy
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui, QtWidgets
 
 from draftutils import annotation_styles
+from draftguitools.gui_annotationstylemanager import AnnotationStyleManagerDialog
 
-# Global reference to hold the single instance of the selector command
+# A global reference that will hold the single instance of our selector command
 SELECTOR_INSTANCE = None
 
-# --- Command Classes ---
+
+def _ensure_style_in_document(full_style_name):
+    """
+    Parses a style name from the dropdown. If it's a User or System style,
+    it ensures a copy exists in the current document.
+    Returns the clean style name upon success, or None on failure.
+    """
+    if not App.ActiveDocument or not full_style_name:
+        return None
+
+    clean_name = full_style_name
+    source = "document"
+
+    if full_style_name.endswith(" [User]"):
+        clean_name = full_style_name[:-7]
+        source = "user"
+    elif full_style_name.endswith(" [System]"):
+        clean_name = full_style_name[:-9]
+        source = "system"
+
+    if source in ["user", "system"]:
+        doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
+        if clean_name not in doc_styles:
+            App.Console.PrintLog(
+                f"Implicitly copying '{clean_name}' from {source} library to the document.\n"
+            )
+            # Implicit copy is needed
+            if source == "user":
+                all_user_styles = annotation_styles.get_user_styles()
+                style_data = all_user_styles.get(clean_name)
+            else:  # source == "system"
+                all_system_styles = annotation_styles.get_system_styles()
+                style_data = all_system_styles.get(clean_name)
+
+            if style_data:
+                doc_styles[clean_name] = copy.deepcopy(style_data)
+                annotation_styles.save_project_styles(App.ActiveDocument, doc_styles)
+                # Let the main selector instance know it needs to refresh
+                if SELECTOR_INSTANCE:
+                    SELECTOR_INSTANCE.update_style_list()
+                    # After refresh, restore the selection to the newly copied style
+                    SELECTOR_INSTANCE.style_combo.setCurrentText(clean_name)
+
+    return clean_name
 
 
 class Draft_ApplyStyleToSelection:
@@ -25,8 +70,11 @@ class Draft_ApplyStyleToSelection:
         }
 
     def Activated(self):
-        selector = Gui.getCommand("Draft_AnnotationSelector")
-        style_name = selector.get_current_style_name()
+        if not SELECTOR_INSTANCE:
+            return
+
+        full_style_name = SELECTOR_INSTANCE.get_current_full_style_name()
+        style_name = _ensure_style_in_document(full_style_name)
         if not style_name:
             return
 
@@ -45,12 +93,15 @@ class Draft_ApplyStyleToAll:
         return {
             "Pixmap": "edit-select-all",  # Placeholder icon
             "MenuText": "Apply Style to All",
-            "ToolTip": "Apply the active style to ALL annotations in the document",
+            "ToolTip": "Apply the active style to all annotations in the document",
         }
 
     def Activated(self):
-        selector = Gui.getCommand("Draft_AnnotationSelector")
-        style_name = selector.get_current_style_name()
+        if not SELECTOR_INSTANCE:
+            return
+
+        full_style_name = SELECTOR_INSTANCE.get_current_full_style_name()
+        style_name = _ensure_style_in_document(full_style_name)
         if not style_name or not App.ActiveDocument:
             return
 
@@ -65,47 +116,62 @@ class Draft_ApplyStyleToAll:
 class Draft_AnnotationSelector:
     """A command that acts as a placeholder and manager for the style dropdown."""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(Draft_AnnotationSelector, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        self.style_combo = QtWidgets.QComboBox()
-        self.style_combo.setMinimumWidth(150)
+        # Explicitly parent the combo box to the main window to ensure correct geometry
+        self.style_combo = QtWidgets.QComboBox(Gui.getMainWindow())
+        self.style_combo.setMinimumWidth(200)
         self.style_combo.setToolTip("Active Annotation Style")
-        self.style_combo.currentIndexChanged.connect(self.on_combo_changed)
 
         self.selection_observer = Gui.Selection.addObserver(self)
         App.addDocumentObserver(self)
 
-    def get_current_style_name(self):
+    def get_current_full_style_name(self):
+        """Returns the full text of the current item, e.g. 'My Style [User]'"""
         return self.style_combo.currentText()
 
     def update_style_list(self):
-        """Reload the list of styles from the active document."""
+        """Reload the list of styles from all sources into the dropdown."""
         self.style_combo.blockSignals(True)
         try:
-            current = self.style_combo.currentText()
+            current_full_text = self.style_combo.currentText()
             self.style_combo.clear()
-            if App.ActiveDocument:
-                styles = annotation_styles.get_project_styles(App.ActiveDocument)
-                if styles:
-                    self.style_combo.addItems(sorted(styles.keys()))
-                    idx = self.style_combo.findText(current)
-                    if idx != -1:
-                        self.style_combo.setCurrentIndex(idx)
+
+            if not App.ActiveDocument:
+                self.style_combo.setEnabled(False)
+                return
+
+            doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
+            user_styles = annotation_styles.get_user_styles()
+            system_styles = annotation_styles.get_system_styles()
+
+            # 1. Add Document Styles
+            if doc_styles:
+                self.style_combo.addItems(sorted(doc_styles.keys()))
+
+            # 2. Add User Library Styles
+            if user_styles:
+                if self.style_combo.count() > 0:
+                    self.style_combo.insertSeparator(self.style_combo.count())
+                for name in sorted(user_styles.keys()):
+                    self.style_combo.addItem(f"{name} [User]")
+
+            # 3. Add System Styles
+            if system_styles:
+                if self.style_combo.count() > 0:
+                    self.style_combo.insertSeparator(self.style_combo.count())
+                for name in sorted(system_styles.keys()):
+                    if name.startswith("_"):
+                        continue  # Hide internal-use styles
+                    self.style_combo.addItem(f"{name} [System]")
+
+            # Restore previous selection if possible
+            idx = self.style_combo.findText(current_full_text)
+            if idx != -1:
+                self.style_combo.setCurrentIndex(idx)
+
             self.style_combo.setEnabled(self.style_combo.count() > 0)
         finally:
             self.style_combo.blockSignals(False)
-
-    def on_combo_changed(self, index):
-        """Called when the user manually changes the style in the dropdown."""
-        # This can be used in the future to auto-apply styles on change if desired,
-        # but for now our explicit "Apply" buttons handle this.
-        pass
 
     def onSelectionChanged(self, doc, obj, sub, func):
         """Update the dropdown to show the style of the selected object."""
@@ -118,10 +184,10 @@ class Draft_AnnotationSelector:
                 and "AnnotationStyle" in selection[0].ViewObject.PropertiesList
             ):
                 style_name = selection[0].ViewObject.AnnotationStyle
-                idx = self.style_combo.findText(style_name)
+                # Find the plain name, as it must be a document style
+                idx = self.style_combo.findText(style_name, QtCore.Qt.MatchExactly)
                 if idx != -1:
                     self.style_combo.setCurrentIndex(idx)
-            # If multiple or non-annotation objects are selected, do not change the combobox
         finally:
             self.style_combo.blockSignals(False)
 
@@ -136,18 +202,21 @@ class Draft_AnnotationSelector:
             self.update_style_list()
 
     def GetResources(self):
+        """A command must have GetResources. This will not be visible."""
         return {
             "Pixmap": "no-icon",
-            "MenuText": "Annotation Style Selector",
-            "ToolTip": "A placeholder for the annotation style widget",
+            "MenuText": "Annotation Style Selector Placeholder",
+            "ToolTip": "Internal placeholder for the annotation style widget",
         }
 
     def Activated(self):
-        pass  # This command does nothing when clicked
+        pass
 
     def IsActive(self):
         return True
 
+
+# --- Registration ---
 
 # Register all the commands with FreeCAD
 Gui.addCommand("Draft_ApplyStyleToSelection", Draft_ApplyStyleToSelection())

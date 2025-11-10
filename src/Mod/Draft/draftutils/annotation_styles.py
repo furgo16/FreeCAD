@@ -11,7 +11,7 @@ USER_STYLES_PATH = os.path.join(App.getUserAppDataDir(), "Draft", "AnnotationSty
 LEGACY_PATH = os.path.join(App.getUserAppDataDir(), "Draft", "StylePresets.json")
 # This will eventually point to a file in the Mod/Draft/Resources directory
 SYSTEM_STYLES_PATH = os.path.join(
-    App.getHomePath(), "Mod", "Draft", "Resources", "SystemAnnotationStyles.json"
+    App.getResourceDir(), "Mod", "Draft", "Resources", "presets", "SystemAnnotationStyles.json"
 )
 # Path for the new annotation preferences group in FreeCAD's parameter editor
 ANNOTATION_PREFERENCES_PATH = "User parameter:BaseApp/Preferences/Mod/Draft/Annotation"
@@ -101,6 +101,9 @@ def get_user_styles():
             try:
                 styles = json.load(f)
             except json.JSONDecodeError:
+                App.Console.PrintWarning(
+                    f"Warning: Failed to decode JSON in user annotation styles file at {USER_STYLES_PATH}.\n"
+                )
                 styles = {}
         return styles
 
@@ -127,6 +130,9 @@ def save_user_styles(styles_dict):
 def get_system_styles():
     """Read and return the read-only system styles."""
     if not os.path.exists(SYSTEM_STYLES_PATH):
+        App.Console.PrintWarning(
+            f"Warning: System annotation styles file not found at {SYSTEM_STYLES_PATH}."
+        )
         # This case should ideally not happen in a proper installation
         return {}
 
@@ -135,6 +141,9 @@ def get_system_styles():
             styles = json.load(f)
         except json.JSONDecodeError:
             styles = {}
+            App.Console.PrintWarning(
+                f"Warning: Failed to decode JSON in system annotation styles file at {SYSTEM_STYLES_PATH}."
+            )
     return styles
 
 
@@ -149,6 +158,9 @@ def get_project_styles(doc):
                 styles[style_name] = json.loads(value)
             except json.JSONDecodeError:
                 # Ignore corrupted style entries in the document
+                App.Console.PrintWarning(
+                    f"Warning: Failed to decode JSON in document annotation style entry '{style_name}' in document '{doc.Name}'."
+                )
                 pass
     return styles
 
