@@ -60,7 +60,7 @@ class AnnotationStyleManagerDialog:
         self.user_root = None
         self.system_root = None
 
-        self._initialize_widgets()  # New method call for setup
+        self._initialize_widgets()
         self._populate_styles()
         self._connect_signals()
         self.on_selection_changed(None, None)  # Set initial state
@@ -295,6 +295,7 @@ class AnnotationStyleManagerDialog:
         self.form.scrollArea_Properties.setEnabled(False)
 
     def on_new(self):
+        """Handle the 'New' button click to create a new annotation style."""
         self._create_new_style(copy_selected=False)
 
     def on_copy(self):
@@ -305,9 +306,11 @@ class AnnotationStyleManagerDialog:
         """Helper function to create a new style, either from defaults or by copying."""
         item = self.tree.currentItem()
         if not item:
-            return
+            # If nothing is selected, default to creating in User Library
+            target_root = self.user_root
+        else:
+            target_root = item if not item.parent() else item.parent()
 
-        target_root = item if not item.parent() else item.parent()
         if target_root not in [self.project_root, self.user_root]:
             # If a system style is selected, create the new style in the User library
             target_root = self.user_root
