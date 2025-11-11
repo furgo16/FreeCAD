@@ -129,21 +129,37 @@ def save_user_styles(styles_dict):
 
 def get_system_styles():
     """Read and return the read-only system styles."""
+    # This function returns a dictionary keyed by the stable `id`, where the value is another
+    # dictionary containing the translatable name and the style properties.
+    # e.g., { "bim_meters": {"name": "BIM (Meters)", "properties": {...}} }
+
+    styles = {}
     if not os.path.exists(SYSTEM_STYLES_PATH):
         App.Console.PrintWarning(
             f"Warning: System annotation styles file not found at {SYSTEM_STYLES_PATH}."
         )
         # This case should ideally not happen in a proper installation
-        return {}
+        return styles
 
     with open(SYSTEM_STYLES_PATH, "r") as f:
         try:
-            styles = json.load(f)
+            styles_list = json.load(f)
+            if isinstance(styles_list, list):
+                for style_object in styles_list:
+                    if (
+                        "id" in style_object
+                        and "name" in style_object
+                        and "properties" in style_object
+                    ):
+                        styles[style_object["id"]] = {
+                            "name": style_object["name"],
+                            "properties": style_object["properties"],
+                        }
         except json.JSONDecodeError:
-            styles = {}
             App.Console.PrintWarning(
                 f"Warning: Failed to decode JSON in system annotation styles file at {SYSTEM_STYLES_PATH}."
             )
+            pass
     return styles
 
 

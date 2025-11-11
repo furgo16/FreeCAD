@@ -46,6 +46,16 @@
             </property>
            </widget>
           </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_Copy">
+              <property name="toolTip">
+               <string>Create a new style as a copy of the selected style</string>
+              </property>
+              <property name="text">
+               <string>Copy</string>
+              </property>
+             </widget>
+            </item>
           <item>
            <widget class="QPushButton" name="pushButton_Delete">
             <property name="toolTip">

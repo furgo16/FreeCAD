@@ -60,9 +60,17 @@ class AnnotationStyleManagerDialog:
         self.user_root = None
         self.system_root = None
 
+        self._initialize_widgets()  # New method call for setup
         self._populate_styles()
         self._connect_signals()
         self.on_selection_changed(None, None)  # Set initial state
+
+    def _initialize_widgets(self):
+        """Populate widgets that have a fixed list of items, like dropdowns."""
+        # This is the UI setup logic that was missing.
+        for arrow_type in utils.ARROW_TYPES:
+            self.form.ArrowTypeStart.addItem(translate("draft", arrow_type))
+            self.form.ArrowTypeEnd.addItem(translate("draft", arrow_type))
 
     def _populate_styles(self):
         """Load styles from all sources and populate the tree widget."""
@@ -74,11 +82,15 @@ class AnnotationStyleManagerDialog:
         self.tree.clear()
 
         # Create root nodes
-        self.project_root = QtWidgets.QTreeWidgetItem(self.tree, ["Project Styles"])
+        self.project_root = QtWidgets.QTreeWidgetItem(
+            self.tree, [translate("Draft", "Document styles")]
+        )
         self.project_root.setToolTip(0, "Styles saved only within this document.")
-        self.user_root = QtWidgets.QTreeWidgetItem(self.tree, ["User Library"])
+        self.user_root = QtWidgets.QTreeWidgetItem(self.tree, [translate("Draft", "User library")])
         self.user_root.setToolTip(0, "Styles available in all of your documents.")
-        self.system_root = QtWidgets.QTreeWidgetItem(self.tree, ["System Styles"])
+        self.system_root = QtWidgets.QTreeWidgetItem(
+            self.tree, [translate("Draft", "System styles")]
+        )
         self.system_root.setToolTip(0, "Read-only template styles included with FreeCAD.")
 
         # Set root nodes to be bold
@@ -87,28 +99,39 @@ class AnnotationStyleManagerDialog:
         for root in [self.project_root, self.user_root, self.system_root]:
             root.setFont(0, font)
 
+        bold_font = QtGui.QFont(font)
+        bold_font.setBold(True)
+
         # Populate children
         for name in sorted(self.project_styles.keys()):
-            QtWidgets.QTreeWidgetItem(self.project_root, [name])
+            item = QtWidgets.QTreeWidgetItem(self.project_root, [name])
+            item.setData(0, QtCore.Qt.UserRole, name)
 
         for name in sorted(self.user_styles.keys()):
             item = QtWidgets.QTreeWidgetItem(self.user_root, [name])
+            item.setData(0, QtCore.Qt.UserRole, name)
             if name == self.default_style_name:
-                item.setText(0, f"{name} (default)")
-                item.setFont(0, font)
+                item.setFont(0, bold_font)
 
-        for name in sorted(self.system_styles.keys()):
-            item = QtWidgets.QTreeWidgetItem(self.system_root, [name])
+        # System styles now have a different structure
+        for style_id, style_data in sorted(self.system_styles.items()):
+            if style_id.startswith("_"):
+                continue  # Hide internal-use styles
+            translatable_name = translate("Draft", style_data["name"])
+            item = QtWidgets.QTreeWidgetItem(self.system_root, [translatable_name])
             # Make system styles italic
-            italic_font = QtGui.QFont(font)
+            italic_font = QtGui.QFont()
             italic_font.setItalic(True)
             item.setFont(0, italic_font)
+            # Store the stable, non-translatable id in the item's data
+            item.setData(0, QtCore.Qt.UserRole, style_id)
 
         self.tree.expandAll()
 
     def _connect_signals(self):
         """Connect all UI element signals to their corresponding slots."""
         self.form.pushButton_New.clicked.connect(self.on_new)
+        self.form.pushButton_Copy.clicked.connect(self.on_copy)
         self.form.pushButton_Delete.clicked.connect(self.on_delete)
         self.form.pushButton_Rename.clicked.connect(self.on_rename)
         self.form.pushButton_SetDefault.clicked.connect(self.on_set_default)
@@ -152,6 +175,7 @@ class AnnotationStyleManagerDialog:
 
         # Management buttons
         self.form.pushButton_New.setEnabled(can_create)
+        self.form.pushButton_Copy.setEnabled(is_project_style or is_user_style)
         self.form.pushButton_Delete.setEnabled(is_project_style or is_user_style)
         self.form.pushButton_Rename.setEnabled(is_project_style or is_user_style)
         self.form.pushButton_SetDefault.setEnabled(is_user_style)
@@ -161,14 +185,16 @@ class AnnotationStyleManagerDialog:
 
     def _populate_editor_from_style(self, item):
         """Fill the property editor fields with values from the selected style."""
-        style_name = item.text(0).split(" (default)")[0]
+        style_id_or_name = item.data(0, QtCore.Qt.UserRole)
         style_data = {}
         if item.parent() is self.project_root:
-            style_data = self.project_styles.get(style_name, {})
+            style_data = self.project_styles.get(style_id_or_name, {})
         elif item.parent() is self.user_root:
-            style_data = self.user_styles.get(style_name, {})
+            style_data = self.user_styles.get(style_id_or_name, {})
         elif item.parent() is self.system_root:
-            style_data = self.system_styles.get(style_name, {})
+            # For system styles, the name is the stable id
+            style_info = self.system_styles.get(style_id_or_name, {})
+            style_data = style_info.get("properties", {})
 
         for key, prop_type in PROPERTY_MAP.items():
             control = getattr(self.form, key)
@@ -196,9 +222,20 @@ class AnnotationStyleManagerDialog:
 
     def _save_editor_to_style(self, item):
         """Save the current values from the property editor into the style data dict."""
-        style_name = item.text(0).split(" (default)")[0]
-        style_data = {}
+        style_name = item.data(0, QtCore.Qt.UserRole)
+        if not style_name:
+            return
 
+        style_data = self._get_editor_values()
+
+        if item.parent() is self.project_root:
+            self.project_styles[style_name] = style_data
+        elif item.parent() is self.user_root:
+            self.user_styles[style_name] = style_data
+
+    def _get_editor_values(self):
+        """Read all values from the property editor and return as a dictionary."""
+        style_data = {}
         for key, prop_type in PROPERTY_MAP.items():
             control = getattr(self.form, key)
             value = None
@@ -207,81 +244,112 @@ class AnnotationStyleManagerDialog:
             elif prop_type == "font":
                 value = control.currentFont().family()
             elif prop_type == "color":
-                value = utils.argb_to_rgba(control.property("color").rgba())
+                int_value = control.property("color").rgba()
+                value = utils.argb_to_rgba(int_value)
             elif prop_type == "int":
                 value = control.value()
             elif prop_type == "float":
                 value = control.value()
             elif prop_type == "length":
-                value = App.Units.Quantity(control.text()).Value
+                try:
+                    value = App.Units.Quantity(control.text()).Value
+                except App.Units.UnitsError:
+                    value = 0.0
             elif prop_type == "bool":
                 value = control.isChecked()
             elif prop_type == "index":
                 value = control.currentIndex()
             style_data[key] = value
-
-        if item.parent() is self.project_root:
-            self.project_styles[style_name] = style_data
-        elif item.parent() is self.user_root:
-            self.user_styles[style_name] = style_data
+        return style_data
 
     def _clear_and_disable_editor(self):
-        """Clear all fields and disable the property editor."""
+        """Populate the editor with global defaults and disable it."""
+        # This provides a sane baseline for the on_new() method.
+        default_style_tuples = utils.get_default_annotation_style()
+        default_data = {key: val[1] for key, val in default_style_tuples.items()}
+
         for key, prop_type in PROPERTY_MAP.items():
             control = getattr(self.form, key)
-            if prop_type in ["str", "length"]:
-                control.setText("")
-            elif prop_type in ["int", "float"]:
-                control.setValue(0)
+            value = default_data.get(key)
+            if value is None:
+                continue
+
+            if prop_type == "str":
+                control.setText(value)
+            elif prop_type == "font":
+                control.setCurrentFont(QtGui.QFont(value))
+            elif prop_type == "color":
+                color = QtGui.QColor(utils.rgba_to_argb(value))
+                control.setProperty("color", color)
+            elif prop_type == "int":
+                control.setValue(value)
+            elif prop_type == "float":
+                control.setValue(value)
+            elif prop_type == "length":
+                control.setText(App.Units.Quantity(value, App.Units.Length).UserString)
             elif prop_type == "bool":
-                control.setChecked(False)
+                control.setChecked(value)
             elif prop_type == "index":
-                control.setCurrentIndex(0)
+                control.setCurrentIndex(value)
+
         self.form.scrollArea_Properties.setEnabled(False)
 
     def on_new(self):
-        """Handle the 'New' button click to create a new annotation style."""
+        self._create_new_style(copy_selected=False)
+
+    def on_copy(self):
+        """Handle the 'Copy' button click to duplicate the selected style."""
+        self._create_new_style(copy_selected=True)
+
+    def _create_new_style(self, copy_selected=False):
+        """Helper function to create a new style, either from defaults or by copying."""
         item = self.tree.currentItem()
         if not item:
             return
 
-        # Determine which library to add the new style to
         target_root = item if not item.parent() else item.parent()
         if target_root not in [self.project_root, self.user_root]:
-            return
+            # If a system style is selected, create the new style in the User library
+            target_root = self.user_root
 
-        # Get new style name from user
-        style_name, ok = QtWidgets.QInputDialog.getText(
+        base_name = ""
+        if copy_selected and item.parent():
+            base_name = item.data(0, QtCore.Qt.UserRole)
+
+        new_name, ok = QtWidgets.QInputDialog.getText(
             self.form, "New Style Name", "Enter a name for the new style:"
         )
-        if not ok or not style_name.strip():
+        if not ok or not new_name.strip():
             return
 
-        style_name = style_name.strip()
+        new_name = new_name.strip()
 
         # Check for name conflicts across all existing styles
         if (
-            style_name in self.project_styles
-            or style_name in self.user_styles
-            or style_name in self.system_styles
+            new_name in self.project_styles
+            or new_name in self.user_styles
+            or any(new_name == translate("Draft", s["name"]) for s in self.system_styles.values())
         ):
             QtWidgets.QMessageBox.warning(
                 self.form, "Style Exists", "A style with this name already exists."
             )
             return
 
-        # Create a new style with default values by reusing Draft utility
-        # The utility returns a dict of (type, value) tuples; we need to extract just the values.
-        default_style_tuples = utils.get_default_annotation_style()
-        new_style_data = {key: val[1] for key, val in default_style_tuples.items()}
+        if copy_selected and base_name:
+            new_style_data = self._get_editor_values()
+        else:
+            # Create a new style from the hardcoded sane defaults
+            default_style_tuples = utils.get_default_annotation_style()
+            new_style_data = {key: val[1] for key, val in default_style_tuples.items()}
 
         if target_root is self.project_root:
-            self.project_styles[style_name] = new_style_data
+            self.project_styles[new_name] = new_style_data
         else:  # target_root is self.user_root
-            self.user_styles[style_name] = new_style_data
+            self.user_styles[new_name] = new_style_data
 
         # Add the new style to the tree, and select it for immediate editing
-        new_item = QtWidgets.QTreeWidgetItem(target_root, [style_name])
+        new_item = QtWidgets.QTreeWidgetItem(target_root, [new_name])
+        new_item.setData(0, QtCore.Qt.UserRole, new_name)
         self.tree.setCurrentItem(new_item)
 
     def on_delete(self):
@@ -292,12 +360,13 @@ class AnnotationStyleManagerDialog:
 
         self.is_deleting = True
         try:
-            style_name = item.text(0).split(" (default)")[0]
+            style_name = item.data(0, QtCore.Qt.UserRole)
+            display_name = item.text(0)
 
             reply = QtWidgets.QMessageBox.question(
                 self.form,
                 "Confirm Deletion",
-                f"Are you sure you want to delete the style '{style_name}'?",
+                f"Are you sure you want to delete the style '{display_name}'?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
@@ -331,10 +400,10 @@ class AnnotationStyleManagerDialog:
         menu = QtWidgets.QMenu()
 
         if item.parent() is self.project_root:
-            export_action = menu.addAction("Copy to User Library")
+            export_action = menu.addAction(translate("Draft", "Copy to User Library"))
             export_action.triggered.connect(self.on_export)
         elif item.parent() in [self.user_root, self.system_root]:
-            import_action = menu.addAction("Copy to Project")
+            import_action = menu.addAction(translate("Draft", "Copy to Document"))
             import_action.triggered.connect(self.on_import)
 
         menu.exec_(self.tree.viewport().mapToGlobal(point))
@@ -345,7 +414,7 @@ class AnnotationStyleManagerDialog:
         if not item or not item.parent():
             return
 
-        old_name = item.text(0).split(" (default)")[0]
+        old_name = item.data(0, QtCore.Qt.UserRole)
 
         new_name, ok = QtWidgets.QInputDialog.getText(
             self.form, "Rename Style", "Enter a new name for the style:", text=old_name
@@ -362,7 +431,7 @@ class AnnotationStyleManagerDialog:
         if (
             new_name in self.project_styles
             or new_name in self.user_styles
-            or new_name in self.system_styles
+            or any(new_name == translate("Draft", s["name"]) for s in self.system_styles.values())
         ):
             QtWidgets.QMessageBox.warning(
                 self.form, "Style Exists", "A style with this name already exists."
@@ -387,7 +456,7 @@ class AnnotationStyleManagerDialog:
             root = self.tree.topLevelItem(i)
             for j in range(root.childCount()):
                 child = root.child(j)
-                if child.text(0).split(" (default)")[0] == new_name:
+                if child.data(0, QtCore.Qt.UserRole) == new_name:
                     self.tree.setCurrentItem(child)
                     return
 
@@ -397,61 +466,70 @@ class AnnotationStyleManagerDialog:
         if not item or item.parent() is not self.user_root:
             return
 
-        new_default_name = item.text(0)
+        new_default_name = item.data(0, QtCore.Qt.UserRole)
 
         # Update the setting in the backend
         annotation_styles.set_default_style_name(new_default_name)
         self.default_style_name = new_default_name
 
-        # Repopulate the entire tree to correctly update bolding and the "(default)" text
+        # Repopulate the entire tree to correctly update bolding
         self._populate_styles()
 
         # Find and re-select the new default item
         for i in range(self.user_root.childCount()):
             child = self.user_root.child(i)
-            if child.text(0).split(" (default)")[0] == new_default_name:
+            if child.data(0, QtCore.Qt.UserRole) == new_default_name:
                 self.tree.setCurrentItem(child)
                 break
 
     def on_import(self):
-        """Handle the 'Copy to Project' action from the context menu."""
+        """Handle the 'Copy to Document' action from the context menu."""
         item = self.tree.currentItem()
         if not item or item.parent() not in [self.user_root, self.system_root]:
             return
 
-        style_name = item.text(0).split(" (default)")[0]
+        style_name_or_id = item.data(0, QtCore.Qt.UserRole)
+        display_name = item.text(0)
+        style_to_copy = None
+
+        # Get a deep copy of the source style data
+        if item.parent() is self.user_root:
+            style_to_copy = self.user_styles.get(style_name_or_id)
+            display_name = style_name_or_id
+        else:  # System style
+            style_info = self.system_styles.get(style_name_or_id, {})
+            style_to_copy = style_info.get("properties", {})
+            display_name = translate("Draft", style_info.get("name", style_name_or_id))
+
+        if not style_to_copy:
+            return
 
         # Check for conflicts
-        if style_name in self.project_styles:
+        if display_name in self.project_styles:
             reply = QtWidgets.QMessageBox.question(
                 self.form,
                 "Overwrite Style",
-                f"A style named '{style_name}' already exists in this project. Overwrite it?",
+                f"A style named '{display_name}' already exists in this document. Overwrite it?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
             if reply == QtWidgets.QMessageBox.No:
                 return
 
-        # Get a deep copy of the source style data
-        if item.parent() is self.user_root:
-            style_data = copy.deepcopy(self.user_styles[style_name])
-        else:  # System style
-            style_data = copy.deepcopy(self.system_styles[style_name])
-
-        self.project_styles[style_name] = style_data
+        self.project_styles[display_name] = copy.deepcopy(style_to_copy)
 
         # Update the tree widget
         # Check if the item already exists to avoid duplicates
         found_item = None
         for i in range(self.project_root.childCount()):
             child = self.project_root.child(i)
-            if child.text(0) == style_name:
+            if child.data(0, QtCore.Qt.UserRole) == display_name:
                 found_item = child
                 break
 
         if not found_item:
-            found_item = QtWidgets.QTreeWidgetItem(self.project_root, [style_name])
+            found_item = QtWidgets.QTreeWidgetItem(self.project_root, [display_name])
+            found_item.setData(0, QtCore.Qt.UserRole, display_name)
 
         self.project_root.sortChildren(0, QtCore.Qt.AscendingOrder)
         self.tree.setCurrentItem(found_item)
@@ -462,7 +540,7 @@ class AnnotationStyleManagerDialog:
         if not item or item.parent() is not self.project_root:
             return
 
-        style_name = item.text(0)
+        style_name = item.data(0, QtCore.Qt.UserRole)
 
         # Check for conflicts
         if style_name in self.user_styles:
@@ -484,13 +562,13 @@ class AnnotationStyleManagerDialog:
         found_item = None
         for i in range(self.user_root.childCount()):
             child = self.user_root.child(i)
-            # Handle case where the existing item might be the default
-            if child.text(0).split(" (default)")[0] == style_name:
+            if child.data(0, QtCore.Qt.UserRole) == style_name:
                 found_item = child
                 break
 
         if not found_item:
             found_item = QtWidgets.QTreeWidgetItem(self.user_root, [style_name])
+            found_item.setData(0, QtCore.Qt.UserRole, style_name)
 
         self.user_root.sortChildren(0, QtCore.Qt.AscendingOrder)
         self.tree.setCurrentItem(found_item)
@@ -499,12 +577,6 @@ class AnnotationStyleManagerDialog:
         """Show the dialog and wait for user input."""
         if self.form.exec_():
             # OK was clicked, save everything
-
-            # Final save of the currently selected item in the editor
-            #            current_item = self.tree.currentItem()
-            #            if current_item and current_item.parent():
-            #                self._save_editor_to_style(current_item)
-
             annotation_styles.save_project_styles(self.doc, self.project_styles)
             annotation_styles.save_user_styles(self.user_styles)
             return True
