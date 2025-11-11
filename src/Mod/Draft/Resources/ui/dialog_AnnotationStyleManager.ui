@@ -126,7 +126,12 @@
                 </widget>
                </item>
                <item row="0" column="1">
-                <widget class="QDoubleSpinBox" name="ScaleMultiplier"/>
+                <widget class="QDoubleSpinBox" name="ScaleMultiplier">
+                 <property name="toolTip">
+                  <string>An optional multiplier for all size-based annotation properties.
+Affects Font Size, Arrow Size, Text Spacing, and all overshoots.</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -145,7 +150,11 @@
                 </widget>
                </item>
                <item row="0" column="1">
-                <widget class="QFontComboBox" name="FontName"/>
+                <widget class="QFontComboBox" name="FontName">
+                 <property name="toolTip">
+                  <string>The font to use for texts and dimensions</string>
+                 </property>
+                </widget>
                </item>
                <item row="1" column="0">
                 <widget class="QLabel" name="label_FontSize">
@@ -155,7 +164,12 @@
                 </widget>
                </item>
                <item row="1" column="1">
-                <widget class="Gui::InputField" name="FontSize"/>
+                <widget class="Gui::InputField" name="FontSize">
+                 <property name="toolTip">
+                  <string>The base size of the font in document units. The final displayed size is
+this value multiplied by the `ScaleMultiplier`.</string>
+                 </property>
+                </widget>
                </item>
                <item row="2" column="0">
                 <widget class="QLabel" name="label_LineSpacing">
@@ -165,7 +179,12 @@
                 </widget>
                </item>
                <item row="2" column="1">
-                <widget class="QDoubleSpinBox" name="LineSpacing"/>
+                <widget class="QDoubleSpinBox" name="LineSpacing">
+                 <property name="toolTip">
+                  <string>The line spacing for multi-line texts and labels (relative to the font size).
+The final line height is calculated as: FontSize * LineSpacing * ScaleMultiplier</string>
+                 </property>
+                </widget>
                </item>
                <item row="3" column="0">
                 <widget class="QLabel" name="label_TextColor">
@@ -175,7 +194,11 @@
                 </widget>
                </item>
                <item row="3" column="1">
-                <widget class="Gui::ColorButton" name="TextColor"/>
+                <widget class="Gui::ColorButton" name="TextColor">
+                 <property name="toolTip">
+                  <string>The color of texts, dimension texts and label texts</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -194,7 +217,12 @@
                 </widget>
                </item>
                <item row="0" column="1">
-                <widget class="QCheckBox" name="ShowLine"/>
+                <widget class="QCheckBox" name="ShowLine">
+                 <property name="toolTip">
+                  <string>Toggles the visibility of the dimension line system (main line, extension lines,
+and arrows) for Dimensions, or the leader line for Labels.</string>
+                 </property>
+                </widget>
                </item>
                <item row="1" column="0">
                 <widget class="QLabel" name="label_LineWidth">
@@ -204,7 +232,11 @@
                 </widget>
                </item>
                <item row="1" column="1">
-                <widget class="QSpinBox" name="LineWidth"/>
+                <widget class="QSpinBox" name="LineWidth">
+                 <property name="toolTip">
+                  <string>The width of the lines and arrows</string>
+                 </property>
+                </widget>
                </item>
                <item row="2" column="0">
                 <widget class="QLabel" name="label_LineColor">
@@ -214,7 +246,11 @@
                 </widget>
                </item>
                <item row="2" column="1">
-                <widget class="Gui::ColorButton" name="LineColor"/>
+                <widget class="Gui::ColorButton" name="LineColor">
+                 <property name="toolTip">
+                  <string>The color of lines and arrows</string>
+                 </property>
+                </widget>
                </item>
                <item row="3" column="0">
                 <widget class="QLabel" name="label_ArrowTypeStart">
@@ -224,7 +260,11 @@
                 </widget>
                </item>
                <item row="3" column="1">
-                <widget class="QComboBox" name="ArrowTypeStart"/>
+                <widget class="QComboBox" name="ArrowTypeStart">
+                 <property name="toolTip">
+                  <string>The type of the start arrow marker</string>
+                 </property>
+                </widget>
                </item>
                <item row="4" column="0">
                 <widget class="QLabel" name="label_ArrowSizeStart">
@@ -234,7 +274,12 @@
                 </widget>
                </item>
                <item row="4" column="1">
-                <widget class="Gui::InputField" name="ArrowSizeStart"/>
+                <widget class="Gui::InputField" name="ArrowSizeStart">
+                 <property name="toolTip">
+                  <string>The base size of the start arrow marker in document units. The final displayed size is
+this value multiplied by the `ScaleMultiplier`. (Dimensions and Labels only)</string>
+                 </property>
+                </widget>
                </item>
                <item row="5" column="0">
                 <widget class="QLabel" name="label_ArrowTypeEnd">
@@ -244,7 +289,11 @@
                 </widget>
                </item>
                <item row="5" column="1">
-                <widget class="QComboBox" name="ArrowTypeEnd"/>
+                <widget class="QComboBox" name="ArrowTypeEnd">
+                 <property name="toolTip">
+                  <string>The type of the end arrow marker</string>
+                 </property>
+                </widget>
                </item>
                <item row="6" column="0">
                 <widget class="QLabel" name="label_ArrowSizeEnd">
@@ -254,7 +303,12 @@
                 </widget>
                </item>
                <item row="6" column="1">
-                <widget class="Gui::InputField" name="ArrowSizeEnd"/>
+                <widget class="Gui::InputField" name="ArrowSizeEnd">
+                 <property name="toolTip">
+                  <string>The base size of the end arrow marker in document units. The final displayed size is
+this value multiplied by the `ScaleMultiplier`. (Dimensions only)</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -273,7 +327,11 @@
                 </widget>
                </item>
                <item row="0" column="1">
-                <widget class="QCheckBox" name="ShowUnit"/>
+                <widget class="QCheckBox" name="ShowUnit">
+                 <property name="toolTip">
+                  <string>If checked, the unit symbol is displayed next to the value on Dimension objects.</string>
+                 </property>
+                </widget>
                </item>
                <item row="1" column="0">
                 <widget class="QLabel" name="label_UnitOverride">
@@ -283,7 +341,11 @@
                 </widget>
                </item>
                <item row="1" column="1">
-                <widget class="QLineEdit" name="UnitOverride"/>
+                <widget class="QLineEdit" name="UnitOverride">
+                 <property name="toolTip">
+                  <string>An optional unit to express the value on Dimension objects (e.g., 'm', 'ft').</string>
+                 </property>
+                </widget>
                </item>
                <item row="2" column="0">
                 <widget class="QLabel" name="label_Decimals">
@@ -293,7 +355,11 @@
                 </widget>
                </item>
                <item row="2" column="1">
-                <widget class="QSpinBox" name="Decimals"/>
+                <widget class="QSpinBox" name="Decimals">
+                 <property name="toolTip">
+                  <string>The number of decimal places for the value on Dimension objects.</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -307,32 +373,48 @@
                <item row="0" column="0">
                 <widget class="QLabel" name="label_DimOvershoot">
                  <property name="text">
-                  <string>Dim Overshoot</string>
+                  <string>Dimension Lines Overshoot</string>
                  </property>
                 </widget>
                </item>
                <item row="0" column="1">
-                <widget class="Gui::InputField" name="DimOvershoot"/>
+                <widget class="Gui::InputField" name="DimOvershoot">
+                 <property name="toolTip">
+                  <string>The base length of the dimension line's overshoot in document units. The final displayed length is
+this value multiplied by the `ScaleMultiplier`. (Dimensions only)</string>
+                 </property>
+                </widget>
                </item>
                <item row="1" column="0">
                 <widget class="QLabel" name="label_ExtLines">
                  <property name="text">
-                  <string>Ext Lines</string>
+                  <string>Extension Lines Length</string>
                  </property>
                 </widget>
                </item>
                <item row="1" column="1">
-                <widget class="Gui::InputField" name="ExtLines"/>
+                <widget class="Gui::InputField" name="ExtLines">
+                 <property name="toolTip">
+                  <string>The length of the extension lines. A value of 0 draws the lines all the way to the measured points.
+A positive value defines the maximum length of the lines. A negative value defines the gap between the lines and the measured points.
+The final length is also affected by the ScaleMultiplier. (Dimensions only)</string>
+                 </property>
+                </widget>
                </item>
                <item row="2" column="0">
                 <widget class="QLabel" name="label_ExtOvershoot">
                  <property name="text">
-                  <string>Ext Overshoot</string>
+                  <string>Extension Lines Overshoot</string>
                  </property>
                 </widget>
                </item>
                <item row="2" column="1">
-                <widget class="Gui::InputField" name="ExtOvershoot"/>
+                <widget class="Gui::InputField" name="ExtOvershoot">
+                 <property name="toolTip">
+                  <string>The base length of the extension line's overshoot in document units. The final displayed length is
+this value multiplied by the `ScaleMultiplier`. (Dimensions only)</string>
+                 </property>
+                </widget>
                </item>
                <item row="3" column="0">
                 <widget class="QLabel" name="label_TextSpacing">
@@ -342,7 +424,12 @@
                 </widget>
                </item>
                <item row="3" column="1">
-                <widget class="Gui::InputField" name="TextSpacing"/>
+                <widget class="Gui::InputField" name="TextSpacing">
+                 <property name="toolTip">
+                  <string>The base distance between the dimension line and the text in document units. The final displayed distance is
+this value multiplied by the `ScaleMultiplier`. (Dimensions only)</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
