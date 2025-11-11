@@ -63,7 +63,7 @@ class Draft_ApplyStyleToSelection:
 
     def GetResources(self):
         return {
-            "Pixmap": "document-apply",  # Placeholder icon
+            "Pixmap": "Draft_ApplyStyleToSelection",
             "MenuText": "Apply Style to Selection",
             "ToolTip": "Apply the active style to selected annotations",
         }
@@ -88,7 +88,7 @@ class Draft_ApplyStyleToAll:
 
     def GetResources(self):
         return {
-            "Pixmap": "edit-select-all",  # Placeholder icon
+            "Pixmap": "Draft_ApplyStyleToAll",
             "MenuText": "Apply Style to All",
             "ToolTip": "Apply the active style to all annotations in the document",
         }

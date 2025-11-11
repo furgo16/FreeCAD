@@ -7,6 +7,8 @@
         <file>icons/Draft_AddToLayer.svg</file>
         <file>icons/Draft_AddNamedGroup.svg</file>
         <file>icons/Draft_Annotation_Style.svg</file>
+        <file>icons/Draft_ApplyStyleToSelection.svg</file>
+        <file>icons/Draft_ApplyStyleToAll.svg</file>
         <file>icons/Draft_Apply.svg</file>
         <file>icons/Draft_Arc.svg</file>
         <file>icons/Draft_Arc_3Points.svg</file>
