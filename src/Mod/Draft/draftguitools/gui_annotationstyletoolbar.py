@@ -250,7 +250,7 @@ class Draft_AnnotationSelector:
     def GetResources(self):
         """A command must have GetResources. This will not be visible."""
         return {
-            "Pixmap": "no-icon",
+            "Pixmap": "Draft_Annotation_Style",
             "MenuText": "Annotation Style Selector Placeholder",
             "ToolTip": "Internal placeholder for the annotation style widget",
         }
