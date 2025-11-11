@@ -16,57 +16,6 @@ from draftguitools.gui_annotationstylemanager import AnnotationStyleManagerDialo
 SELECTOR_INSTANCE = None
 
 
-def _ensure_style_in_document(style_data):
-    """
-    Parses a style's data from the dropdown. If it's a User or System style,
-    it ensures a copy exists in the current document.
-    Returns the clean style name upon success, or None on failure.
-    """
-    if not App.ActiveDocument or not style_data:
-        return None
-
-    clean_name = style_data.get("name")
-    source = style_data.get("source")
-
-    if not clean_name or not source:
-        return None
-
-    doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
-    if source in ["user", "system"]:
-        # For system styles, the name of the new document style should be the translated one.
-        display_name = clean_name
-        if source == "system":
-            all_system_styles_info = annotation_styles.get_system_styles()
-            style_info = all_system_styles_info.get(clean_name, {})
-            display_name = translate("Draft", style_info.get("name", clean_name))
-
-        if display_name not in doc_styles:
-            App.Console.PrintLog(
-                f"Implicitly copying '{display_name}' from {source} library to the document.\n"
-            )
-            # Implicit copy is needed
-            if source == "user":
-                all_user_styles = annotation_styles.get_user_styles()
-                properties_to_copy = all_user_styles.get(clean_name)
-            else:  # source == "system"
-                all_system_styles = annotation_styles.get_system_styles()
-                style_info = all_system_styles.get(clean_name, {})  # clean_name is the stable id
-                properties_to_copy = style_info.get("properties")
-
-            if properties_to_copy:
-                doc_styles[display_name] = copy.deepcopy(properties_to_copy)
-                annotation_styles.save_project_styles(App.ActiveDocument, doc_styles)
-                # Let the main selector instance know it needs to refresh
-                if SELECTOR_INSTANCE:
-                    SELECTOR_INSTANCE.update_style_list()
-                    # After refresh, restore the selection to the newly copied style
-                    SELECTOR_INSTANCE.set_active_style_by_name(display_name)
-            return display_name
-        return display_name
-
-    return clean_name
-
-
 def _apply_style_to_objects(style_name, objects):
     """
     Helper function to apply a given style to a list of objects,
@@ -123,7 +72,9 @@ class Draft_ApplyStyleToSelection:
         if not SELECTOR_INSTANCE:
             return
         style_data = SELECTOR_INSTANCE.get_current_user_data()
-        style_name = _ensure_style_in_document(style_data)
+        if not style_data:
+            return
+        style_name = style_data.get("name")
         _apply_style_to_objects(style_name, Gui.Selection.getSelection())
 
     def IsActive(self):
@@ -146,7 +97,9 @@ class Draft_ApplyStyleToAll:
         if not SELECTOR_INSTANCE:
             return
         style_data = SELECTOR_INSTANCE.get_current_user_data()
-        style_name = _ensure_style_in_document(style_data)
+        if not style_data:
+            return
+        style_name = style_data.get("name")
         if not App.ActiveDocument:
             return
         _apply_style_to_objects(style_name, App.ActiveDocument.Objects)
@@ -175,52 +128,79 @@ class Draft_AnnotationSelector:
         """Finds a style by its clean document name and sets it as the current item."""
         for i in range(self.style_combo.count()):
             user_data = self.style_combo.itemData(i)
-            if (
-                user_data
-                and user_data.get("source") == "document"
-                and user_data.get("name") == style_name
-            ):
+            if user_data and user_data.get("name") == style_name:
                 self.style_combo.setCurrentIndex(i)
                 return
 
+    def _prepopulate_document_if_needed(self, doc):
+        """Checks if a document is uninitialized and adds default styles if so."""
+        if not hasattr(doc, "Meta") or doc.Meta.get("Draft_AnnotationStylesInitialized"):
+            return
+
+        App.Console.PrintLog(
+            f"Performing one-time initialization of annotation styles for document '{doc.Label}'.\n"
+        )
+
+        # 1. Find the best default style to add
+        default_style_id = annotation_styles.get_default_style_name()
+        style_to_add = None
+        source_lib = None
+
+        if default_style_id:
+            user_styles = annotation_styles.get_user_styles()
+            if default_style_id in user_styles:
+                style_to_add = user_styles[default_style_id]
+                source_lib = "User"
+            else:
+                system_styles = annotation_styles.get_system_styles()
+                style_info = system_styles.get(default_style_id)
+                if style_info:
+                    style_to_add = style_info.get("properties")
+                    source_lib = "System"
+
+        # 2. Fallback if preferred default is not found
+        if not style_to_add:
+            default_style_id = "_freecad_default_style"
+            system_styles = annotation_styles.get_system_styles()
+            style_info = system_styles.get(default_style_id, {})
+            style_to_add = style_info.get("properties")
+            source_lib = "System fallback"
+
+        # 3. Add the style to the document
+        if style_to_add:
+            style_name = translate("Draft", style_info.get("name", default_style_id))
+            App.Console.PrintLog(
+                f"Adding default style '{style_name}' from {source_lib} library.\n"
+            )
+            doc_styles = {style_name: copy.deepcopy(style_to_add)}
+            annotation_styles.save_project_styles(doc, doc_styles)
+
+        # 4. Mark document as initialized
+        meta = doc.Meta
+        meta["Draft_AnnotationStylesInitialized"] = "True"
+        doc.Meta = meta
+
     def update_style_list(self):
-        """Reload the list of styles from all sources into the dropdown."""
+        """Reload the list of styles from the active document into the dropdown."""
         self.style_combo.blockSignals(True)
         try:
             current_data = self.style_combo.currentData()
             self.style_combo.clear()
 
-            if not App.ActiveDocument:
+            doc = App.ActiveDocument
+            if not doc:
                 self.style_combo.setEnabled(False)
                 return
 
-            doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
-            user_styles = annotation_styles.get_user_styles()
-            system_styles = annotation_styles.get_system_styles()
+            # This is the new pre-population hook
+            self._prepopulate_document_if_needed(doc)
 
-            # 1. Add Document Styles
+            doc_styles = annotation_styles.get_project_styles(doc)
+
+            # The dropdown now only shows document styles
             if doc_styles:
                 for name in sorted(doc_styles.keys()):
                     self.style_combo.addItem(name, {"name": name, "source": "document"})
-
-            # 2. Add User Library Styles
-            if user_styles:
-                if self.style_combo.count() > 0:
-                    self.style_combo.insertSeparator(self.style_combo.count())
-                for name in sorted(user_styles.keys()):
-                    display_text = f"{name} {translate('Draft', '[User]')}"
-                    self.style_combo.addItem(display_text, {"name": name, "source": "user"})
-
-            # 3. Add System Styles
-            if system_styles:
-                if self.style_combo.count() > 0:
-                    self.style_combo.insertSeparator(self.style_combo.count())
-                for style_id, style_data in sorted(system_styles.items()):
-                    if style_id.startswith("_"):
-                        continue  # Hide internal-use styles
-                    translatable_name = translate("Draft", style_data["name"])
-                    display_text = f"{translatable_name} {translate('Draft', '[System]')}"
-                    self.style_combo.addItem(display_text, {"name": style_id, "source": "system"})
 
             # Restore previous selection if possible
             if current_data:
@@ -259,7 +239,9 @@ class Draft_AnnotationSelector:
         self.update_style_list()
 
     def onDocumentCreated(self, doc):
-        self.update_style_list()
+        # We don't call update_style_list here, because the document is not yet fully active.
+        # The onDocumentActivated event will fire immediately after and handle it.
+        pass
 
     def onDocumentClosed(self, doc):
         if not App.listDocuments():

@@ -576,6 +576,12 @@ class AnnotationStyleManagerDialog:
     def execute(self):
         """Show the dialog and wait for user input."""
         if self.form.exec_():
+            # OK was clicked, save the state of the currently active editor
+            # before saving the dictionaries to the document.
+            current_item = self.tree.currentItem()
+            if current_item and current_item.parent():
+                self._save_editor_to_style(current_item)
+
             # OK was clicked, save everything
             annotation_styles.save_project_styles(self.doc, self.project_styles)
             annotation_styles.save_user_styles(self.user_styles)
