@@ -82,18 +82,36 @@ class TestAnnotationStyles(test_base.DraftTestCaseDoc):
     def test_get_system_styles(self):
         """Test reading the built-in, read-only system styles."""
         # Arrange
-        expected_system_styles = {
-            "BIM (Meters)": {"TextSize": 250.0, "ArrowSize": 200.0},
-            "Draft (mm)": {"TextSize": 3.5, "ArrowSize": 3.5},
+        system_styles_list = [
+            {
+                "id": "bim_meters",
+                "name": "BIM (Meters)",
+                "properties": {"TextSize": 250.0, "ArrowSize": 200.0},
+            },
+            {
+                "id": "draft_mm",
+                "name": "Draft (mm)",
+                "properties": {"TextSize": 3.5, "ArrowSize": 3.5},
+            },
+        ]
+
+        # The expected output of the function is a dictionary keyed by the id
+        expected_styles_dict = {
+            "bim_meters": {
+                "name": "BIM (Meters)",
+                "properties": {"TextSize": 250.0, "ArrowSize": 200.0},
+            },
+            "draft_mm": {"name": "Draft (mm)", "properties": {"TextSize": 3.5, "ArrowSize": 3.5}},
         }
+
         with open(self.system_styles_path, "w") as f:
-            json.dump(expected_system_styles, f)
+            json.dump(system_styles_list, f)
 
         # Act
         read_styles = annotation_styles.get_system_styles()
 
         # Assert
-        self.assertEqual(read_styles, expected_system_styles)
+        self.assertEqual(read_styles, expected_styles_dict)
 
     def test_get_project_styles_from_empty_doc(self):
         """Test that a document with no styles returns an empty dictionary."""
