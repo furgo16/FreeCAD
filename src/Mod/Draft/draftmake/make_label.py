@@ -364,6 +364,7 @@ def make_label(
             new_obj.ViewObject.Justification = "Right"
 
         gui_utils.format_object(new_obj)
+        gui_utils.style_new_object(new_obj)
         gui_utils.select(new_obj)
 
     return new_obj

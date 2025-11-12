@@ -214,6 +214,7 @@ def make_dimension(p1, p2, p3=None, p4=None):
         new_obj.ViewObject.FlipText = flip_text
         new_obj.ViewObject.Override = override
         gui_utils.format_object(new_obj)
+        gui_utils.style_new_object(new_obj)
         gui_utils.select(new_obj)
 
     return new_obj
@@ -666,6 +667,7 @@ def make_angular_dimension(
     if App.GuiUp:
         new_obj.ViewObject.FlipText = _get_flip_text_ang(center, angles[0], angles[1], normal)
         gui_utils.format_object(new_obj)
+        gui_utils.style_new_object(new_obj)
         gui_utils.select(new_obj)
 
     return new_obj

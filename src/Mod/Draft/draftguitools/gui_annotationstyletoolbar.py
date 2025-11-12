@@ -8,54 +8,12 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui, QtWidgets
 
 from draftutils import annotation_styles
-from draftutils import utils
+from draftutils import utils, gui_utils
 from draftutils.translate import translate
 from draftguitools.gui_annotationstylemanager import AnnotationStyleManagerDialog
 
 # A global reference that will hold the single instance of our selector command
 SELECTOR_INSTANCE = None
-
-
-def _apply_style_to_objects(style_name, objects):
-    """
-    Helper function to apply a given style to a list of objects,
-    correctly handling the enumeration update and visual property propagation.
-    """
-    if not style_name or not objects:
-        return
-
-    # Get the complete dictionary of styles now present in the document
-    all_doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
-    style_properties = all_doc_styles.get(style_name)
-
-    if not style_properties:
-        return
-
-    style_names_list = sorted(all_doc_styles.keys())
-
-    for obj in objects:
-        if "AnnotationStyle" in obj.ViewObject.PropertiesList:
-            try:
-                # This is the correct, evidence-based pattern.
-                vobj = obj.ViewObject
-                # 1. Assign the list to update the enumeration.
-                vobj.AnnotationStyle = style_names_list
-                # 2. Assign the string value to set the logical style.
-                vobj.AnnotationStyle = style_name
-
-                # 3. Manually propagate all visual properties to force a refresh.
-                for attr, value in style_properties.items():
-                    if hasattr(vobj, attr):
-                        try:
-                            # PropertyColor expects an integer (packed RGBA)
-                            setattr(vobj, attr, value)
-                        except Exception as e:
-                            App.Console.PrintWarning(
-                                f"Could not set property '{attr}' on {obj.Name}: {e}\n"
-                            )
-
-            except Exception as e:
-                App.Console.PrintError(f"Failed to apply style to {obj.Name}: {e}\n")
 
 
 class Draft_ApplyStyleToSelection:
@@ -75,10 +33,10 @@ class Draft_ApplyStyleToSelection:
         if not style_data:
             return
         style_name = style_data.get("name")
-        _apply_style_to_objects(style_name, Gui.Selection.getSelection())
+        gui_utils.apply_style_to_objects(style_name, Gui.Selection.getSelection())
 
     def IsActive(self):
-        # Per "Option C", this button is always enabled when a document is active.
+        # This button is always enabled when a document is active.
         # The Activated method will handle the case of an empty selection.
         return Gui.ActiveDocument is not None
 
@@ -102,7 +60,7 @@ class Draft_ApplyStyleToAll:
         style_name = style_data.get("name")
         if not App.ActiveDocument:
             return
-        _apply_style_to_objects(style_name, App.ActiveDocument.Objects)
+        gui_utils.apply_style_to_objects(style_name, App.ActiveDocument.Objects)
 
     def IsActive(self):
         return Gui.ActiveDocument is not None

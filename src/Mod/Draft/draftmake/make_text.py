@@ -141,6 +141,7 @@ def make_text(string, placement=None, screen=False, height=None, line_spacing=1)
             new_obj.ViewObject.LineSpacing = line_spacing
 
         gui_utils.format_object(new_obj)
+        gui_utils.style_new_object(new_obj)
         gui_utils.select(new_obj)
 
     return new_obj

@@ -1048,4 +1048,123 @@ def toggle_working_plane(obj, action=None, restore=False, dialog=None):
         return True
 
 
+def apply_style_to_objects(style_name, objects):
+    """
+    Apply a given style to a list of objects, correctly handling the
+    enumeration update and visual property propagation.
+    """
+    if not style_name or not objects:
+        return
+
+    from draftutils import annotation_styles
+
+    # Get the complete dictionary of styles present in the document
+    all_doc_styles = annotation_styles.get_project_styles(App.ActiveDocument)
+    style_properties = all_doc_styles.get(style_name)
+
+    if not style_properties:
+        _wrn("Style '{}' not found in the current document.".format(style_name))
+        return
+
+    style_names_list = sorted(all_doc_styles.keys())
+
+    for obj in objects:
+        if "AnnotationStyle" in obj.ViewObject.PropertiesList:
+            try:
+                vobj = obj.ViewObject
+                # 1. Assign the list to update the enumeration.
+                vobj.AnnotationStyle = style_names_list
+                # 2. Assign the string value to set the logical style.
+                vobj.AnnotationStyle = style_name
+
+                # 3. Manually propagate all visual properties to force a refresh.
+                for attr, value in style_properties.items():
+                    if hasattr(vobj, attr):
+                        try:
+                            setattr(vobj, attr, value)
+                        except Exception as e:
+                            _wrn("Could not set property '{}' on {}: {}".format(attr, obj.Name, e))
+
+            except Exception as e:
+                _err("Failed to apply style to {}: {}".format(obj.Name, e))
+
+
+def style_new_object(new_obj):
+    """
+    Apply the active workbench's default annotation style to a newly
+    created object.
+
+    This function determines the correct default style based on user preferences
+    and the active workbench, ensures that style is present in the document
+    (copying it from a library if necessary), and then applies it.
+    """
+    if not App.GuiUp:
+        return
+
+    try:
+        from draftutils import annotation_styles
+        from draftguitools import gui_annotationstyletoolbar
+
+        doc = new_obj.Document
+
+        # 1. Determine the name/id of the default style using the fallback hierarchy
+        active_wb = Gui.activeWorkbench()
+        default_path = annotation_styles.ANNOTATION_PREFERENCES_PATH
+        path = getattr(active_wb, "default_annotation_style_path", default_path)
+
+        style_name_or_id = annotation_styles.get_default_style_name(path=path)
+        source = None
+
+        user_styles = annotation_styles.get_user_styles()
+        system_styles = annotation_styles.get_system_styles()
+
+        if style_name_or_id in user_styles:
+            source = "user"
+        elif style_name_or_id in system_styles:
+            source = "system"
+        else:
+            # Fallback if preferred default is not found
+            style_name_or_id = "_freecad_default_style"
+            source = "system"
+            if style_name_or_id not in system_styles:
+                _err(
+                    "Critical: The fallback default style '_freecad_default_style' could not be found."
+                )
+                return
+
+        # 2. Ensure this style is in the document, copying it if necessary
+        doc_styles = annotation_styles.get_project_styles(doc)
+
+        # Determine the final display name
+        if source == "system":
+            style_info = system_styles.get(style_name_or_id, {})
+            final_style_name = translate("Draft", style_info.get("name", style_name_or_id))
+        else:  # user or document style
+            final_style_name = style_name_or_id
+
+        if final_style_name not in doc_styles:
+            # Perform the copy
+            App.Console.PrintLog(
+                f"Default style '{final_style_name}' not in document. Copying from {source} library.\n"
+            )
+            if source == "user":
+                properties_to_copy = user_styles.get(style_name_or_id)
+            else:  # system
+                properties_to_copy = system_styles.get(style_name_or_id, {}).get("properties")
+
+            if properties_to_copy:
+                doc_styles[final_style_name] = copy.deepcopy(properties_to_copy)
+                annotation_styles.save_project_styles(doc, doc_styles)
+                # If a copy happened, the toolbar dropdown must be refreshed
+                if gui_annotationstyletoolbar.SELECTOR_INSTANCE:
+                    gui_annotationstyletoolbar.SELECTOR_INSTANCE.update_style_list()
+
+        # 3. Apply the style to the new object
+        if final_style_name:
+            apply_style_to_objects(final_style_name, [new_obj])
+
+    except Exception as e:
+        _err("Could not apply default annotation style: {}".format(e))
+
+
 ## @}
