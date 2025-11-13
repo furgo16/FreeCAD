@@ -10,7 +10,11 @@ from PySide import QtCore, QtGui, QtWidgets
 from draftutils import annotation_styles
 from draftutils import utils, gui_utils
 from draftutils.translate import translate
-from draftguitools.gui_annotationstylemanager import AnnotationStyleManagerDialog
+
+
+def QT_TRANSLATE_NOOP(ctx, txt):
+    return txt
+
 
 # A global reference that will hold the single instance of our selector command
 SELECTOR_INSTANCE = None
@@ -22,8 +26,10 @@ class Draft_ApplyStyleToSelection:
     def GetResources(self):
         return {
             "Pixmap": "Draft_ApplyStyleToSelection",
-            "MenuText": "Apply Style to Selection",
-            "ToolTip": "Apply the active style to selected annotations",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_ApplyStyle", "Apply Style to Selection"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_ApplyStyle", "Apply the active style to selected annotations"
+            ),
         }
 
     def Activated(self):
@@ -47,8 +53,10 @@ class Draft_ApplyStyleToAll:
     def GetResources(self):
         return {
             "Pixmap": "Draft_ApplyStyleToAll",
-            "MenuText": "Apply Style to All",
-            "ToolTip": "Apply the active style to all annotations in the document",
+            "MenuText": QT_TRANSLATE_NOOP("Draft_ApplyToAll", "Apply Style to All"),
+            "ToolTip": QT_TRANSLATE_NOOP(
+                "Draft_ApplyToAll", "Apply the active style to all annotations in the document"
+            ),
         }
 
     def Activated(self):

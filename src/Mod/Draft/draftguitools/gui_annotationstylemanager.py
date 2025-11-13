@@ -120,6 +120,8 @@ class AnnotationStyleManagerDialog:
             item = QtWidgets.QTreeWidgetItem(self.user_root, [name])
             item.setData(0, QtCore.Qt.UserRole, name)
             if name == self.default_style_name:
+                format_string = translate("Draft", "{} (default)")
+                item.setText(0, format_string.format(name))
                 item.setFont(0, bold_font)
 
         # System styles now have a different structure
@@ -329,7 +331,9 @@ class AnnotationStyleManagerDialog:
             base_name = item.data(0, QtCore.Qt.UserRole)
 
         new_name, ok = QtWidgets.QInputDialog.getText(
-            self.form, "New Style Name", "Enter a name for the new style:"
+            self.form,
+            translate("Draft", "New Style Name"),
+            translate("Draft", "Enter a name for the new style:"),
         )
         if not ok or not new_name.strip():
             return
@@ -343,7 +347,9 @@ class AnnotationStyleManagerDialog:
             or any(new_name == translate("Draft", s["name"]) for s in self.system_styles.values())
         ):
             QtWidgets.QMessageBox.warning(
-                self.form, "Style Exists", "A style with this name already exists."
+                self.form,
+                translate("Draft", "Style Exists"),
+                translate("Draft", "A style with this name already exists."),
             )
             return
 
@@ -377,8 +383,10 @@ class AnnotationStyleManagerDialog:
 
             reply = QtWidgets.QMessageBox.question(
                 self.form,
-                "Confirm Deletion",
-                f"Are you sure you want to delete the style '{display_name}'?",
+                translate("Draft", "Confirm Deletion"),
+                translate("Draft", "Are you sure you want to delete the style '{}'?").format(
+                    display_name
+                ),
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
@@ -429,7 +437,10 @@ class AnnotationStyleManagerDialog:
         old_name = item.data(0, QtCore.Qt.UserRole)
 
         new_name, ok = QtWidgets.QInputDialog.getText(
-            self.form, "Rename Style", "Enter a new name for the style:", text=old_name
+            self.form,
+            translate("Draft", "Rename Style"),
+            translate("Draft", "Enter a new name for the style:"),
+            text=old_name,
         )
         if not ok or not new_name.strip():
             return
@@ -446,7 +457,9 @@ class AnnotationStyleManagerDialog:
             or any(new_name == translate("Draft", s["name"]) for s in self.system_styles.values())
         ):
             QtWidgets.QMessageBox.warning(
-                self.form, "Style Exists", "A style with this name already exists."
+                self.form,
+                translate("Draft", "Style Exists"),
+                translate("Draft", "A style with this name already exists."),
             )
             return
 
@@ -520,8 +533,10 @@ class AnnotationStyleManagerDialog:
         if display_name in self.project_styles:
             reply = QtWidgets.QMessageBox.question(
                 self.form,
-                "Overwrite Style",
-                f"A style named '{display_name}' already exists in this document. Overwrite it?",
+                translate("Draft", "Overwrite Style"),
+                translate(
+                    "Draft", "A style named '{}' already exists in this document. Overwrite it?"
+                ).format(display_name),
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
@@ -558,8 +573,10 @@ class AnnotationStyleManagerDialog:
         if style_name in self.user_styles:
             reply = QtWidgets.QMessageBox.question(
                 self.form,
-                "Overwrite Style",
-                f"A style named '{style_name}' already exists in your user library. Overwrite it?",
+                translate("Draft", "Overwrite Style"),
+                translate(
+                    "Draft", "A style named '{}' already exists in your user library. Overwrite it?"
+                ).format(style_name),
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
