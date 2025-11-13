@@ -660,6 +660,34 @@ def _get_param_dictionary():
     }
     # fmt: on
 
+    # Manually add the legacy annotation parameters that are no longer in the UI.
+    # This is necessary to prevent crashes in legacy code (e.g., ViewProviders)
+    # that still reads these parameters upon object creation. These values will be
+    # immediately overwritten by the new style system via style_new_object().
+    param_dict["Mod/Draft"].update(
+        {
+            "DefaultAnnoScaleMultiplier": ("float", 1.0),
+            "textfont": ("string", "Arial"),
+            "textheight": ("float", 3.5),
+            "LineSpacing": ("float", 1.0),
+            "DefaultTextColor": ("unsigned", 255),
+            "DimShowLine": ("bool", True),
+            "DefaultAnnoLineWidth": ("int", 2),
+            "dimsymbolstart": ("int", 2),
+            "arrowsizestart": ("float", 1.0),
+            "dimsymbolend": ("int", 2),
+            "arrowsizeend": ("float", 1.0),
+            "DefaultAnnoLineColor": ("unsigned", 255),
+            "showUnit": ("bool", True),
+            "overrideUnit": ("string", ""),
+            "dimPrecision": ("int", 2),
+            "dimovershoot": ("float", 1.0),
+            "extlines": ("float", -0.5),
+            "extovershoot": ("float", 2.0),
+            "dimspacing": ("float", 1.0),
+        }
+    )
+
     # Preferences ui files are stored in resource files.
     # For the Draft Workbench: /Mod/Draft/Draft_rc.py
     # For the Arch Workbench: /Mod/Arch/Arch_rc.py

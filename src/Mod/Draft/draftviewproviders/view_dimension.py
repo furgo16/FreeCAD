@@ -123,7 +123,6 @@ class ViewProviderDimensionBase(ViewProviderDraftAnnotation):
         if "TextSpacing" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Spacing between text and dimension line")
             vobj.addProperty("App::PropertyLength", "TextSpacing", "Text", _tip, locked=True)
-            vobj.TextSpacing = params.get_param("dimspacing")
 
         if "FlipText" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Rotate the dimension text 180 degrees")
@@ -156,12 +155,10 @@ class ViewProviderDimensionBase(ViewProviderDraftAnnotation):
         if "Decimals" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "The number of decimals to show")
             vobj.addProperty("App::PropertyInteger", "Decimals", "Units", _tip, locked=True)
-            vobj.Decimals = params.get_param("dimPrecision")
 
         if "ShowUnit" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Show the unit suffix")
             vobj.addProperty("App::PropertyBool", "ShowUnit", "Units", _tip, locked=True)
-            vobj.ShowUnit = params.get_param("showUnit")
 
         if "UnitOverride" not in properties:
             _tip = QT_TRANSLATE_NOOP(
@@ -171,7 +168,6 @@ class ViewProviderDimensionBase(ViewProviderDraftAnnotation):
                 "Use 'arch' to force US arch notation",
             )
             vobj.addProperty("App::PropertyString", "UnitOverride", "Units", _tip, locked=True)
-            vobj.UnitOverride = params.get_param("overrideUnit")
 
     def set_graphics_properties(self, vobj, properties):
         """Set graphics properties only if they don't already exist."""
@@ -188,24 +184,20 @@ class ViewProviderDimensionBase(ViewProviderDraftAnnotation):
                 "The distance the dimension line " "is extended\n" "past the extension lines",
             )
             vobj.addProperty("App::PropertyDistance", "DimOvershoot", "Graphics", _tip, locked=True)
-            vobj.DimOvershoot = params.get_param("dimovershoot")
 
         if "ExtLines" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Length of the extension lines")
             vobj.addProperty("App::PropertyDistance", "ExtLines", "Graphics", _tip, locked=True)
-            vobj.ExtLines = params.get_param("extlines")
 
         if "ExtOvershoot" not in properties:
             _tip = QT_TRANSLATE_NOOP(
                 "App::Property", "Length of the extension line\n" "beyond the dimension line"
             )
             vobj.addProperty("App::PropertyDistance", "ExtOvershoot", "Graphics", _tip, locked=True)
-            vobj.ExtOvershoot = params.get_param("extovershoot")
 
         if "ShowLine" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Shows the dimension line and arrows")
             vobj.addProperty("App::PropertyBool", "ShowLine", "Graphics", _tip, locked=True)
-            vobj.ShowLine = params.get_param("DimShowLine")
 
     def getIcon(self):
         """Return the path to the icon used by the viewprovider."""
@@ -223,12 +215,10 @@ class ViewProviderLinearDimension(ViewProviderDimensionBase):
         """Set graphics properties only if they don't already exist."""
         super().set_graphics_properties(vobj, properties)
 
-        self.Object = vobj.Object
-        if vobj.Object.Diameter or not self.is_linked_to_circle():
-            vobj.ArrowTypeStart = params.get_param("dimsymbolstart")
-        else:
+        # For radial dimensions, the start arrow must always be 'None' initially.
+        # This can be overridden by the user's chosen style later if they desire.
+        if not vobj.Object.Diameter and self.is_linked_to_circle():
             vobj.ArrowTypeStart = "None"
-        vobj.ArrowTypeEnd = params.get_param("dimsymbolend")
 
     def attach(self, vobj):
         """Set up the scene sub-graph of the viewprovider."""
@@ -810,9 +800,6 @@ class ViewProviderAngularDimension(ViewProviderDimensionBase):
     def set_graphics_properties(self, vobj, properties):
         """Set graphics properties only if they don't already exist."""
         super().set_graphics_properties(vobj, properties)
-
-        vobj.ArrowTypeStart = params.get_param("dimsymbolstart")
-        vobj.ArrowTypeEnd = params.get_param("dimsymbolend")
 
     def attach(self, vobj):
         """Set up the scene sub-graph of the viewprovider."""

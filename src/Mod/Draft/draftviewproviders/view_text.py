@@ -58,7 +58,6 @@ class ViewProviderText(ViewProviderDraftAnnotation):
         if "LineSpacing" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Line spacing (relative to font size)")
             vobj.addProperty("App::PropertyFloat", "LineSpacing", "Text", _tip, locked=True)
-            vobj.LineSpacing = params.get_param("LineSpacing")
 
     def getIcon(self):
         """Return the path to the icon used by the view provider."""

@@ -150,6 +150,8 @@ class DraftWorkbench(FreeCADGui.Workbench):
         if hasattr(FreeCADGui, "draftToolBar"):
             if not hasattr(FreeCADGui.draftToolBar, "loadedPreferences"):
                 from draftutils import params
+                from draftutils import annotation_styles
+                from draftguitools.gui_preferences import create_preference_page_class
 
                 params._param_observer_start()
                 FreeCADGui.addPreferencePage(
@@ -167,6 +169,14 @@ class DraftWorkbench(FreeCADGui.Workbench):
                 FreeCADGui.addPreferencePage(
                     ":/ui/preferences-drafttexts.ui", QT_TRANSLATE_NOOP("QObject", "Draft")
                 )
+
+                # Create a preference page class configured for the Draft workbench
+                DraftTextsPage = create_preference_page_class(
+                    annotation_styles.ANNOTATION_PREFERENCES_PATH
+                )
+                # Register the class type
+                FreeCADGui.addPreferencePage(DraftTextsPage, QT_TRANSLATE_NOOP("QObject", "Draft"))
+
                 FreeCADGui.draftToolBar.loadedPreferences = True
 
         FreeCADGui.getMainWindow().mainWindowClosed.connect(self.Deactivated)

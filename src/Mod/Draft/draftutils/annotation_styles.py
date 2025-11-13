@@ -205,13 +205,13 @@ def save_project_styles(doc, styles_dict):
     doc.Meta = meta
 
 
-def get_default_style_name():
+def get_default_style_name(path=ANNOTATION_PREFERENCES_PATH):
     """Read the default annotation style name from the FreeCAD preferences."""
-    param = App.ParamGet(ANNOTATION_PREFERENCES_PATH)
+    param = App.ParamGet(path)
     return param.GetString("DefaultStyle", "")
 
 
-def set_default_style_name(name):
+def set_default_style_name(name, path=ANNOTATION_PREFERENCES_PATH):
     """Write the default annotation style name to the FreeCAD preferences."""
-    param = App.ParamGet(ANNOTATION_PREFERENCES_PATH)
+    param = App.ParamGet(path)
     param.SetString("DefaultStyle", name)

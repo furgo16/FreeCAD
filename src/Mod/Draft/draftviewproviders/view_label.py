@@ -74,13 +74,10 @@ class ViewProviderLabel(ViewProviderDraftAnnotation):
         if "LineSpacing" not in properties:
             _tip = QT_TRANSLATE_NOOP("App::Property", "Line spacing (relative to font size)")
             vobj.addProperty("App::PropertyFloat", "LineSpacing", "Text", _tip, locked=True)
-            vobj.LineSpacing = params.get_param("LineSpacing")
 
     def set_graphics_properties(self, vobj, properties):
         """Set graphics properties only if they don't already exist."""
         super().set_graphics_properties(vobj, properties)
-
-        vobj.ArrowTypeStart = params.get_param("dimsymbolstart")
 
         if "Frame" not in properties:
             _tip = QT_TRANSLATE_NOOP(
