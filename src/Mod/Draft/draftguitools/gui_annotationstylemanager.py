@@ -61,6 +61,7 @@ class AnnotationStyleManagerDialog:
         self.system_root = None
 
         self._initialize_widgets()
+        self._set_button_icons()
         self._populate_styles()
         self._connect_signals()
         self.on_selection_changed(None, None)  # Set initial state
@@ -71,6 +72,14 @@ class AnnotationStyleManagerDialog:
         for arrow_type in utils.ARROW_TYPES:
             self.form.ArrowTypeStart.addItem(translate("draft", arrow_type))
             self.form.ArrowTypeEnd.addItem(translate("draft", arrow_type))
+
+    def _set_button_icons(self):
+        """Set icons for the main action buttons in the dialog."""
+        self.form.pushButton_New.setIcon(QtGui.QIcon(":/icons/document-new.svg"))
+        self.form.pushButton_Copy.setIcon(QtGui.QIcon(":/icons/edit-copy.svg"))
+        self.form.pushButton_Delete.setIcon(QtGui.QIcon(":/icons/delete.svg"))
+        self.form.pushButton_Rename.setIcon(QtGui.QIcon(":/icons/edit-edit.svg"))
+        self.form.pushButton_SetDefault.setIcon(QtGui.QIcon(":/icons/edit_OK.svg"))
 
     def _populate_styles(self):
         """Load styles from all sources and populate the tree widget."""
