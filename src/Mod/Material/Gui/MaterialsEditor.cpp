@@ -25,6 +25,7 @@
 #include <QDesktopServices>
 #include <QIODevice>
 #include <QItemSelectionModel>
+#include <QSignalBlocker>
 #include <QMenu>
 #include <QMessageBox>
 #include <QString>
@@ -110,20 +111,16 @@ void MaterialsEditor::setup()
 
     ui->buttonURL->setIcon(QIcon(QStringLiteral(":/icons/internet-web-browser.svg")));
 
-    connect(ui->standardButtons->button(QDialogButtonBox::Ok),
-            &QPushButton::clicked,
-            this,
-            &MaterialsEditor::onOk);
+    connect(ui->standardButtons->button(QDialogButtonBox::Ok), &QPushButton::clicked, this, &MaterialsEditor::accept);
     connect(ui->standardButtons->button(QDialogButtonBox::Cancel),
-            &QPushButton::clicked,
-            this,
-            &MaterialsEditor::onCancel);
+        &QPushButton::clicked, this, &MaterialsEditor::reject);
     connect(ui->standardButtons->button(QDialogButtonBox::Save),
             &QPushButton::clicked,
             this,
             &MaterialsEditor::onSave);
 
     connect(ui->editName, &QLineEdit::textEdited, this, &MaterialsEditor::onName);
+    connect(ui->editName, &QLineEdit::textEdited, this, &MaterialsEditor::onEditorNameChanged);
     connect(ui->editAuthor, &QLineEdit::textEdited, this, &MaterialsEditor::onAuthor);
     connect(ui->editLicense, &QLineEdit::textEdited, this, &MaterialsEditor::onLicense);
     connect(ui->editSourceURL, &QLineEdit::textEdited, this, &MaterialsEditor::onSourceURL);
@@ -169,6 +166,16 @@ void MaterialsEditor::setup()
             this,
             &MaterialsEditor::onContextMenu);
 #endif
+
+    // Connect all data-changing widgets to the onDataChanged slot.
+    connect(ui->editAuthor, &QLineEdit::textEdited, this, &MaterialsEditor::onDataChanged);
+    connect(ui->editLicense, &QLineEdit::textEdited, this, &MaterialsEditor::onDataChanged);
+    connect(ui->editSourceURL, &QLineEdit::textEdited, this, &MaterialsEditor::onDataChanged);
+    connect(ui->editSourceReference, &QLineEdit::textEdited, this, &MaterialsEditor::onDataChanged);
+    connect(ui->editDescription, &QTextEdit::textChanged, this, &MaterialsEditor::onDataChanged);
+
+    // Start the editor in a "New, Unsaved" state by default.
+    createTransientItem();
 }
 
 void MaterialsEditor::getFavorites()
@@ -332,6 +339,39 @@ bool MaterialsEditor::isRecent(const QString& uuid) const
 void MaterialsEditor::onName(const QString& text)
 {
     _material->setName(text);
+}
+
+void MaterialsEditor::onEditorNameChanged(const QString& newName)
+{
+    if (m_currentItem && m_currentItem->data(Qt::UserRole + 1).isValid()) {
+        QVariant v = m_currentItem->data(Qt::UserRole + 1);
+        // If not saved, reflect change in the tree item
+        if (v.value<MaterialsEditor::MaterialStatus>() != MaterialsEditor::MaterialStatus::Saved) {
+            m_currentItem->setText(newName + "*");
+            onDataChanged();
+        }
+    }
+}
+
+void MaterialsEditor::onDataChanged()
+{
+    if (!m_currentItem) {
+        return;
+    }
+
+    auto statusVariant = m_currentItem->data(Qt::UserRole + 1);
+    if (!statusVariant.isValid()) return;
+
+    if (statusVariant.value<MaterialsEditor::MaterialStatus>() == MaterialsEditor::MaterialStatus::Saved) {
+        // Transition the state from Saved to Modified.
+        m_currentItem->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::Modified), Qt::UserRole + 1);
+
+        // Update UI to indicate "unsaved" state.
+        m_currentItem->setText(m_currentItem->text() + "*");
+        QFont font = m_currentItem->font();
+        font.setItalic(true);
+        m_currentItem->setFont(font);
+    }
 }
 
 void MaterialsEditor::onAuthor(const QString& text)
@@ -506,66 +546,40 @@ void MaterialsEditor::setMaterialDefaults()
 void MaterialsEditor::onNewMaterial(bool checked)
 {
     Q_UNUSED(checked)
-
-    // Ensure data is saved (or discarded) before changing materials
-    if (_material->getEditState() != Materials::Material::ModelEdit_None) {
-        // Prompt the user to save or discard changes
-        int res = confirmSave(this);
-        if (res == QMessageBox::Cancel) {
-            return;
-        }
+    if (!checkUnsavedChanges()) {
+        return; // User cancelled the action.
     }
 
-    // Create a new material
-    _material = std::make_shared<Materials::Material>();
-    setMaterialDefaults();
-    _materialSelected = false;
+    if (!findWritableLibraryNode()) {
+        QMessageBox::warning(this, tr("No Writable Library"), tr("A writable material library is required to create new materials."));
+        return;
+    }
+
+    createTransientItem();
 }
 
 void MaterialsEditor::onInheritNewMaterial(bool checked)
 {
     Q_UNUSED(checked)
-
-    // Save the current UUID to use as out parent
-    auto parent = _material->getUUID();
-
-    // Ensure data is saved (or discarded) before changing materials
-    if (_material->getEditState() != Materials::Material::ModelEdit_None) {
-        // Prompt the user to save or discard changes
-        int res = confirmSave(this);
-        if (res == QMessageBox::Cancel) {
-            return;
-        }
+    if (!checkUnsavedChanges()) {
+        return; // User cancelled.
     }
 
-    // Create a new material
-    _material = std::make_shared<Materials::Material>();
-    _material->setParentUUID(parent);
-    setMaterialDefaults();
+    if (!findWritableLibraryNode()) {
+        QMessageBox::warning(this, tr("No Writable Library"), tr("A writable material library is required to create new materials."));
+        return;
+    }
+
+    createTransientItem(true); // true = from inheritance
 }
 
 void MaterialsEditor::onOk(bool checked)
 {
     Q_UNUSED(checked)
-
-    // Ensure data is saved (or discarded) before exiting
-    if (_material->getEditState() != Materials::Material::ModelEdit_None) {
-        // Prompt the user to save or discard changes
-        int res = confirmSave(this);
-        if (res == QMessageBox::Cancel) {
-            return;
-        }
-    }
-
     accept();
 }
 
-void MaterialsEditor::onCancel(bool checked)
-{
-    Q_UNUSED(checked)
-
-    reject();
-}
+// onCancel was removed; Cancel is handled by reject() directly.
 
 void MaterialsEditor::onSave(bool checked)
 {
@@ -579,22 +593,43 @@ void MaterialsEditor::saveMaterial()
     MaterialSave dialog(_material, this);
     dialog.setModal(true);
     if (dialog.exec() == QDialog::Accepted) {
-        updateMaterialGeneral();
-        _material->resetEditState();
+        // The dialog may return a material instance representing the saved object.
+        try {
+            _material = dialog.getMaterial();
+        } catch (...) {
+            // If getMaterial is not present or fails, keep current _material.
+        }
+
+        // Refresh the tree and re-select the saved item.
         refreshMaterialTree();
+
+        // Try to find the saved material in the refreshed tree and select it.
+        QString savedUUID = _material->getUUID();
+        QModelIndex newIndex = findInTree(savedUUID);
+        if (newIndex.isValid()) {
+            auto model = static_cast<QStandardItemModel*>(ui->treeMaterials->model());
+            m_currentItem = model->itemFromIndex(newIndex);
+            finalizeSavedItem(m_currentItem);
+            ui->treeMaterials->selectionModel()->setCurrentIndex(newIndex, QItemSelectionModel::ClearAndSelect);
+        } else {
+            m_currentItem = nullptr;
+        }
+
+        _material->resetEditState();
         _materialSelected = true;
+        return true;
     }
+    return false;
 }
 
 void MaterialsEditor::accept()
 {
-    if (_material->isOldFormat()) {
-        Base::Console().log("*** Old format file ***\n");
-        oldFormatError();
-
-        return;
+    if (!checkUnsavedChanges()) {
+        return; // User cancelled, so do not close the dialog.
     }
-    addRecent(_material->getUUID());
+    if (_material && !_material->getUUID().isEmpty()) {
+        addRecent(_material->getUUID());
+    }
     saveWindow();
     QDialog::accept();
 }
@@ -613,6 +648,9 @@ void MaterialsEditor::oldFormatError()
 
 void MaterialsEditor::reject()
 {
+    if (!checkUnsavedChanges()) {
+        return; // User cancelled, so do not close the dialog.
+    }
     saveWindow();
     QDialog::reject();
 }
@@ -690,6 +728,12 @@ void MaterialsEditor::addMaterials(
             card->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled
                            | Qt::ItemIsDropEnabled);
             card->setData(QVariant(uuid), Qt::UserRole);
+            // Track the saved state for this item
+            card->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::Saved), Qt::UserRole + 1);
+            // Store the material pointer for quick access
+            QVariant matVar;
+            matVar.setValue(material);
+            card->setData(matVar, Qt::UserRole + 2);
             if (material->isOldFormat()) {
                 card->setToolTip(tr("This card uses the old format and must be saved before use"));
             }
@@ -901,6 +945,8 @@ void MaterialsEditor::fillMaterialTree()
         if (showLibraries) {
             auto lib = new QStandardItem(library->getName());
             lib->setFlags(Qt::ItemIsEnabled | Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled);
+            // mark library read-only state for writable library discovery
+            lib->setData(QVariant(library->isReadOnly()), Qt::UserRole + 3);
             addExpanded(tree, model, lib, param);
 
             QIcon icon = getIcon(library);
@@ -1257,61 +1303,57 @@ void MaterialsEditor::onSelectMaterial(const QItemSelection& selected,
                                        const QItemSelection& deselected)
 {
     Q_UNUSED(deselected);
-
-    // Get the UUID before changing the underlying data model
-    QString uuid;
-    auto model = qobject_cast<QStandardItemModel*>(ui->treeMaterials->model());
-    QModelIndexList indexes = selected.indexes();
-    for (auto it = indexes.begin(); it != indexes.end(); it++) {
-        QStandardItem* item = model->itemFromIndex(*it);
-
-        if (item) {
-            uuid = item->data(Qt::UserRole).toString();
-            break;
-        }
-    }
-
-    if (uuid.isEmpty() || uuid == _material->getUUID()) {
+    if (selected.isEmpty() || !selected.indexes().first().isValid()) {
         return;
     }
 
-    // Ensure data is saved (or discarded) before changing materials
-    if (_material->getEditState() != Materials::Material::ModelEdit_None) {
-        // Prompt the user to save or discard changes
-        int res = confirmSave(this);
-        if (res == QMessageBox::Cancel) {
-            return;
+    // 1. Check for unsaved changes before allowing the selection to change.
+    if (!checkUnsavedChanges()) {
+        // If the user cancels, revert the selection in the UI.
+        QSignalBlocker blocker(ui->treeMaterials->selectionModel());
+        if (m_currentItem) {
+            ui->treeMaterials->selectionModel()->setCurrentIndex(
+                m_currentItem->index(), QItemSelectionModel::ClearAndSelect);
         }
+        return;
+    }
+
+    // 2. Proceed with loading the newly selected material.
+    auto model = qobject_cast<QStandardItemModel*>(ui->treeMaterials->model());
+    auto* selectedItem = model->itemFromIndex(selected.indexes().first());
+
+    if (!selectedItem || selectedItem == m_currentItem) {
+        return; // No real change.
+    }
+
+    m_currentItem = selectedItem;
+    QString uuid = m_currentItem->data(Qt::UserRole).toString();
+
+    if (uuid.isEmpty()) { // It's a folder or library node.
+        _material = std::make_shared<Materials::Material>();
+        setMaterialDefaults(); // Clear the editor panel.
+        return;
     }
 
     // Get the selected material
     try {
         _material = std::make_shared<Materials::Material>(*getMaterialManager().getMaterial(uuid));
-    }
-    catch (Materials::ModelNotFound const&) {
+    } catch (const Materials::ModelNotFound&) {
         Base::Console().log("*** Unable to load material '%s'\n", uuid.toStdString().c_str());
         _material = std::make_shared<Materials::Material>();
     }
 
     updateMaterial();
-    _material->resetEditState();
     _materialSelected = true;
+
+    // After loading, the state is 'Saved' by definition.
+    m_currentItem->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::Saved), Qt::UserRole + 1);
 }
 
 void MaterialsEditor::onDoubleClick(const QModelIndex& index)
 {
     Q_UNUSED(index)
-
-    // Ensure data is saved (or discarded) before exiting
-    if (_material->getEditState() != Materials::Material::ModelEdit_None) {
-        // Prompt the user to save or discard changes
-        int res = confirmSave(this);
-        if (res == QMessageBox::Cancel) {
-            return;
-        }
-    }
-
-    _materialSelected = true;
+    // Trigger the accept action, which will handle unsaved changes.
     accept();
 }
 
@@ -1339,46 +1381,173 @@ void MaterialsEditor::onInheritNew(bool checked)
 {
     Q_UNUSED(checked)
 }
-
-int MaterialsEditor::confirmSave(QWidget* parent)
+// Helper: find the QModelIndex for a material UUID in the materials tree.
+QModelIndex MaterialsEditor::findInTree(const QString& uuid)
 {
-    QMessageBox box(parent ? parent : this);
+    auto* model = static_cast<QStandardItemModel*>(ui->treeMaterials->model());
+    if (!model) return QModelIndex();
+
+    QStandardItem* root = model->invisibleRootItem();
+    std::function<QModelIndex(QStandardItem*)> search = [&](QStandardItem* item) -> QModelIndex {
+        if (!item) return QModelIndex();
+        QVariant v = item->data(Qt::UserRole);
+        if (v.isValid() && v.toString() == uuid) {
+            return item->index();
+        }
+        for (int i = 0; i < item->rowCount(); ++i) {
+            QModelIndex found = search(item->child(i));
+            if (found.isValid()) return found;
+        }
+        return QModelIndex();
+    };
+
+    for (int i = 0; i < root->rowCount(); ++i) {
+        QModelIndex idx = search(root->child(i));
+        if (idx.isValid()) return idx;
+    }
+    return QModelIndex();
+}
+
+bool MaterialsEditor::checkUnsavedChanges()
+{
+    if (!m_currentItem) {
+        return true; // No item selected, nothing to save.
+    }
+
+    auto statusVariant = m_currentItem->data(Qt::UserRole + 1);
+    if (!statusVariant.isValid() || statusVariant.value<MaterialsEditor::MaterialStatus>() == MaterialsEditor::MaterialStatus::Saved) {
+        return true; // Not a material item or no changes to save.
+    }
+
+    QMessageBox box(this);
     box.setIcon(QMessageBox::Question);
-    box.setWindowTitle(QObject::tr("Unsaved Material"));
-    box.setText(QObject::tr("Save changes to the material before closing?"));
-    box.setInformativeText(QObject::tr("Otherwise, all changes will be lost."));
-    box.setStandardButtons(QMessageBox::Discard | QMessageBox::Cancel | QMessageBox::Save);
+    box.setText(tr("The current material has been modified."));
+    box.setInformativeText(tr("Do you want to save your changes?"));
+    box.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
     box.setDefaultButton(QMessageBox::Save);
-    box.setEscapeButton(QMessageBox::Cancel);
 
-    // add shortcuts
-    QAbstractButton* saveBtn = box.button(QMessageBox::Save);
-    if (saveBtn->shortcut().isEmpty()) {
-        QString text = saveBtn->text();
-        text.prepend(QLatin1Char('&'));
-        saveBtn->setShortcut(QKeySequence::mnemonic(text));
+    int ret = box.exec();
+
+    switch (ret) {
+    case QMessageBox::Save:
+        return saveMaterial(); // Proceed only if save was successful.
+    case QMessageBox::Discard:
+        if (statusVariant.value<MaterialsEditor::MaterialStatus>() == MaterialsEditor::MaterialStatus::New_Unsaved) {
+            // If the unsaved item was new, remove it from the tree.
+            if (m_currentItem->parent()) {
+                m_currentItem->parent()->removeRow(m_currentItem->row());
+            } else {
+                qobject_cast<QStandardItemModel*>(ui->treeMaterials->model())->removeRow(m_currentItem->row());
+            }
+            m_currentItem = nullptr;
+        } else if (statusVariant.value<MaterialsEditor::MaterialStatus>() == MaterialsEditor::MaterialStatus::Modified) {
+            revertModifiedItem(m_currentItem);
+        }
+        return true;
+    case QMessageBox::Cancel:
+    default:
+        return false; // User cancelled the parent action.
+    }
+}
+
+void MaterialsEditor::createTransientItem(bool fromInheritance)
+{
+    auto parentUUID = _material ? _material->getUUID() : QString();
+
+    _material = std::make_shared<Materials::Material>();
+    if (fromInheritance && !parentUUID.isEmpty()) {
+        _material->setParentUUID(parentUUID);
+    }
+    setMaterialDefaults();
+
+    auto* model = static_cast<QStandardItemModel*>(ui->treeMaterials->model());
+    QStandardItem* newItem = new QStandardItem(tr("New Material*"));
+
+    QFont font;
+    font.setItalic(true);
+    newItem->setFont(font);
+    
+    newItem->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::New_Unsaved), Qt::UserRole + 1);
+    QVariant matVar;
+    matVar.setValue(_material);
+    newItem->setData(matVar, Qt::UserRole + 2);
+
+    QStandardItem* parentNode = findWritableLibraryNode();
+    if (parentNode) {
+        parentNode->appendRow(newItem);
+        ui->treeMaterials->expand(parentNode->index());
+    } else {
+        model->invisibleRootItem()->appendRow(newItem);
+    }
+    
+    ui->treeMaterials->selectionModel()->setCurrentIndex(newItem->index(), QItemSelectionModel::ClearAndSelect);
+    ui->editName->setFocus();
+    ui->editName->selectAll();
+    
+    m_currentItem = newItem;
+    updateMaterial(); // Load blank data into editor
+}
+
+void MaterialsEditor::finalizeSavedItem(QStandardItem* item)
+{
+    if (!item) return;
+    item->setText(_material->getName());
+    QFont font;
+    font.setItalic(false);
+    item->setFont(font);
+
+    item->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::Saved), Qt::UserRole + 1);
+    QVariant matVar;
+    matVar.setValue(_material);
+    item->setData(matVar, Qt::UserRole + 2);
+}
+
+void MaterialsEditor::revertModifiedItem(QStandardItem* item)
+{
+    if (!item) return;
+    QString uuid = item->data(Qt::UserRole).toString();
+    if (uuid.isEmpty()) return;
+
+    try {
+        auto cleanMaterial = Materials::MaterialManager::getManager().getMaterial(uuid);
+        _material = std::make_shared<Materials::Material>(*cleanMaterial);
+    } catch (...) {
+        _material = std::make_shared<Materials::Material>();
+        setMaterialDefaults();
+        return;
     }
 
-    QAbstractButton* discardBtn = box.button(QMessageBox::Discard);
-    if (discardBtn->shortcut().isEmpty()) {
-        QString text = discardBtn->text();
-        text.prepend(QLatin1Char('&'));
-        discardBtn->setShortcut(QKeySequence::mnemonic(text));
-    }
+    // Revert the tree item's appearance.
+    item->setText(_material->getName());
+    QFont font = item->font();
+    font.setItalic(false);
+    item->setFont(font);
+    item->setData(QVariant::fromValue(MaterialsEditor::MaterialStatus::Saved), Qt::UserRole + 1);
 
-    int res = QMessageBox::Cancel;
-    box.adjustSize();  // Silence warnings from Qt on Windows
-    switch (box.exec()) {
-        case QMessageBox::Save:
-            saveMaterial();
-            res = QMessageBox::Save;
-            break;
-        case QMessageBox::Discard:
-            res = QMessageBox::Discard;
-            break;
-    }
+    // Reload the editor panel with the clean data.
+    updateMaterial();
+}
 
-    return res;
+QStandardItem* MaterialsEditor::findWritableLibraryNode()
+{
+    auto* model = static_cast<QStandardItemModel*>(ui->treeMaterials->model());
+    QStandardItem* root = model->invisibleRootItem();
+    
+    for (int i = 0; i < root->rowCount(); ++i) {
+        QStandardItem* child = root->child(i);
+        auto readOnlyVariant = child->data(Qt::UserRole + 3);
+        if (readOnlyVariant.isValid() && !readOnlyVariant.toBool()) {
+            return child; // It's a writable library node.
+        }
+    }
+    // Fallback: try to find a node named "User".
+    for (int i = 0; i < root->rowCount(); ++i) {
+        QStandardItem* child = root->child(i);
+        if (child->text().contains("User")) { 
+            return child;
+        }
+    }
+    return nullptr; // No writable library found.
 }
 
 #include "moc_MaterialsEditor.cpp"

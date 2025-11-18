@@ -29,6 +29,7 @@
 #include <QDialog>
 #include <QDir>
 #include <QIcon>
+#include <QItemSelection>
 #include <QPoint>
 #include <QStandardItem>
 #include <QStyledItemDelegate>
@@ -54,6 +55,14 @@ class MaterialsEditor: public QDialog
 {
     Q_OBJECT
 
+private:
+    // Enum to track the state of the material currently being edited.
+    enum class MaterialStatus {
+        Saved,          // Clean, saved material from the library.
+        Modified,       // An existing material with unsaved changes.
+        New_Unsaved     // A new, in-memory material that has not been saved yet.
+    };
+
 public:
     explicit MaterialsEditor(Materials::MaterialFilter filter,
                              QWidget* parent = nullptr);
@@ -77,7 +86,6 @@ public:
     void onAppearanceAdd(bool checked);
     void onAppearanceRemove(bool checked);
     void onOk(bool checked);
-    void onCancel(bool checked);
     void onSave(bool checked);
     void accept() override;
     void reject() override;
@@ -111,10 +119,36 @@ public:
     }
 
 protected:
-    int confirmSave(QWidget* parent);
-    void saveMaterial();
+    // Returns 'true' on success, 'false' on failure/cancellation.
+    bool saveMaterial();
 
 private:
+    // Member variable to track the currently selected item in the tree.
+    QStandardItem* m_currentItem = nullptr;
+
+    // Helper method to check for unsaved work before changing state.
+    // Returns 'true' if the action can proceed, 'false' if the user cancels.
+    bool checkUnsavedChanges();
+
+    // Helper method to create and display the temporary item in the tree.
+    void createTransientItem(bool fromInheritance = false);
+
+    // Helper to finalize a tree item after a successful save operation.
+    void finalizeSavedItem(QStandardItem* item);
+
+    // Helper to find the default writable library node in the tree.
+    QStandardItem* findWritableLibraryNode();
+
+    // Helper to search the tree for a material UUID and return its index.
+    QModelIndex findInTree(const QString& uuid);
+
+    // Helper to revert changes on a modified item.
+    void revertModifiedItem(QStandardItem* item);
+
+    // Editor-internal slots
+    void onEditorNameChanged(const QString& newName);
+    void onDataChanged();
+
     std::unique_ptr<Ui_MaterialsEditor> ui;
     std::shared_ptr<Materials::Material> _material;
     AppearancePreview* _rendered;
@@ -241,5 +275,8 @@ private:
 };
 
 }  // namespace MatGui
+
+#include <QMetaType>
+Q_DECLARE_METATYPE(MatGui::MaterialsEditor::MaterialStatus)
 
 #endif  // MATGUI_MATERIALSEDITOR_H
