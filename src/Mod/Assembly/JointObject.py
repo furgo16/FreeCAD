@@ -1664,7 +1664,9 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
                 # We add sub_name twice because the joints references have element name + vertex name
                 # and in the case of initial selection, both are the same.
 
-                moving_part, new_sub = UtilsAssembly.getComponentReference(self.assembly, sel.Object, sub_name)
+                moving_part, new_sub = UtilsAssembly.getComponentReference(
+                    self.assembly, sel.Object, sub_name
+                )
                 if not moving_part:
                     break
 
