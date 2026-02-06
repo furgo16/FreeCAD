@@ -1789,21 +1789,25 @@ if FreeCAD.GuiUp:
             self.wallWidget = QtGui.QWidget()
             self.wallWidget.setWindowTitle(translate("Arch", "Wall Options"))
 
+            loader = FreeCADGui.UiLoader()
             layout = QtGui.QFormLayout(self.wallWidget)
 
-            self.length = FreeCADGui.UiLoader().createWidget("Gui::InputField")
-            self.length.setProperty("unit", "mm")
-            self.length.setText(obj.Length.UserString)
+            self.length = loader.createWidget("Gui::QuantitySpinBox")
+            FreeCADGui.ExpressionBinding(self.length).bind(obj, "Length")
+            self.length.setProperty("unit", obj.Length.getUserPreferred()[2])
+            self.length.setProperty("rawValue", obj.Length.Value)
             layout.addRow(translate("Arch", "Length"), self.length)
 
-            self.width = FreeCADGui.UiLoader().createWidget("Gui::InputField")
-            self.width.setProperty("unit", "mm")
-            self.width.setText(obj.Width.UserString)
+            self.width = loader.createWidget("Gui::QuantitySpinBox")
+            FreeCADGui.ExpressionBinding(self.width).bind(obj, "Width")
+            self.width.setProperty("unit", obj.Width.getUserPreferred()[2])
+            self.width.setProperty("rawValue", obj.Width.Value)
             layout.addRow(translate("Arch", "Width"), self.width)
 
-            self.height = FreeCADGui.UiLoader().createWidget("Gui::InputField")
-            self.height.setProperty("unit", "mm")
-            self.height.setText(obj.Height.UserString)
+            self.height = loader.createWidget("Gui::QuantitySpinBox")
+            FreeCADGui.ExpressionBinding(self.height).bind(obj, "Height")
+            self.height.setProperty("unit", obj.Height.getUserPreferred()[2])
+            self.height.setProperty("rawValue", obj.Height.Value)
             layout.addRow(translate("Arch", "Height"), self.height)
 
             self.alignLayout = QtGui.QHBoxLayout()
@@ -1843,9 +1847,9 @@ if FreeCAD.GuiUp:
             self.obj.recompute()
 
         def accept(self):
-            self.obj.Length = self.length.text()
-            self.obj.Width = self.width.text()
-            self.obj.Height = self.height.text()
+            self.obj.Length = self.length.property("rawValue")
+            self.obj.Width = self.width.property("rawValue")
+            self.obj.Height = self.height.property("rawValue")
             return super().accept()
 
 
