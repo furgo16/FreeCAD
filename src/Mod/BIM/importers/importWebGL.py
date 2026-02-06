@@ -82,17 +82,17 @@ baseFloat = ",.-0123456789"
 threejs_version = "0.172.0"
 
 
-def getHTMLTemplate():
-    """Returns the HTML template from external file.
-    The custom template path can be set in the Preferences.
-    Returns None if no valid template is found.
+def getHTMLTemplate(template_type="standard"):
+    """Returns the HTML template.
+    Priority 1: Custom template defined in Preferences.
+    Priority 2: Internal template based on template_type ('bim' or 'standard').
     """
 
     def try_read_template(path, description):
         """Helper function to safely read a template file."""
         if not os.path.isfile(path):
             FreeCAD.Console.PrintWarning(
-                f"{description.capitalize()} file '{path}' does not " "exist or is not a file.\n"
+                f"{description.capitalize()} file '{path}' does not exist or is not a file.\n"
             )
             return None
         try:
@@ -100,29 +100,25 @@ def getHTMLTemplate():
                 return f.read()
         except Exception as e:
             FreeCAD.Console.PrintWarning(
-                f"Failed to read {description} file '{path}' " f"due to: {str(e)}\n"
+                f"Failed to read {description} file '{path}' due to: {str(e)}\n"
             )
             return None
 
+    # Check for custom template (override)
     using_custom_template = params.get_param("useCustomWebGLExportTemplate", path="Mod/BIM")
 
     # Try to use custom template if enabled
     if using_custom_template:
         custom_path = params.get_param("WebGLTemplateCustomPath", path="Mod/BIM")
         custom_content = try_read_template(custom_path, "custom WebGL template")
+
+        # If found, return immediately. Ignore template_type.
         if custom_content:
             FreeCAD.Console.PrintMessage(f"Using custom template file '{custom_path}'.\n")
             return custom_content
-        else:
-            # Custom template failed - ask user or auto-fallback
-            if not FreeCADGui:
-                # In non-GUI mode, cancel export when custom template fails
-                FreeCAD.Console.PrintError(
-                    f"Export cancelled: Custom template '{custom_path}' " "not available.\n"
-                )
-                return None
 
-            # In GUI mode, ask the user
+        # If custom fails, ask user (GUI) or fall back (Console) - logic preserved from original
+        if FreeCADGui:
             message = translate(
                 "BIM",
                 "Custom WebGL template file '{}' could not be read.\n\n"
@@ -143,15 +139,24 @@ def getHTMLTemplate():
                     f"Export cancelled: Custom template '{custom_path}' " "not available.\n"
                 )
                 return None
+        else:
+            FreeCAD.Console.PrintError(
+                f"Export cancelled: Custom template '{custom_path}' not available.\n"
+            )
+            return None
 
-    # Try to use default template
+    # Select internal template based on type
+    file_name = "webgl_export_template.html"
+    if template_type == "bim":
+        file_name = "webgl_thatopen_template.html"
+
     default_template_path = os.path.join(
         FreeCAD.getResourceDir(),
         "Mod",
         "BIM",
         "Resources",
         "templates",
-        "webgl_export_template.html",
+        file_name,
     )
     default_content = try_read_template(default_template_path, "default WebGL template")
     if default_content:
@@ -192,8 +197,16 @@ def export(
         False if no template was available).
     """
 
-    # Check template availability first, before any processing
-    html = getHTMLTemplate()
+    # Scan objects to determine mode
+    objectslist = Draft.get_group_contents(exportList, walls=True, addgroups=False)
+
+    # Simple heuristic: if any object has an IFC Type, we treat it as a BIM export
+    has_bim = any(hasattr(o, "IfcType") for o in objectslist)
+    requested_mode = "bim" if has_bim else "standard"
+
+    # Get the HTML template for export (this handles the custom vs default logic)
+    html = getHTMLTemplate(requested_mode)
+
     if html is None:
         # No template available - export failed
         return False
@@ -256,6 +269,10 @@ def export(
             "faceColors": [],
             "facesToFacets": [],
             "floats": [],
+            # Always inject these, even if using standard template (they are just ignored)
+            "ifc_type": getattr(obj, "IfcType", "None"),
+            "psets": obj.IfcProperties if hasattr(obj, "IfcProperties") else {},
+            "guid": obj.IfcData.get("IfcUID", "") if hasattr(obj, "IfcData") else "",
         }
 
         if obj.isDerivedFrom("Part::Feature"):
@@ -458,6 +475,9 @@ def compress_verts(verts: list[str], floats: list[str]) -> tuple[list[int], list
     """
     Create floats list to compress verts and wires being written into the JS
     """
+    if not verts:
+        return [], floats
+
     floats_v, ind, verts_v = np.unique(verts, return_index=True, return_inverse=True)
 
     # Reorder as np.unique orders the resulting array (needed for facet matching)

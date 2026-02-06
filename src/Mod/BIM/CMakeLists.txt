@@ -194,6 +194,7 @@ SET(bimcommands_SRCS
 
 SET(BIM_templates
     Resources/templates/webgl_export_template.html
+    Resources/templates/webgl_thatopen_template.html
 )
 
 SET(nativeifc_SRCS
