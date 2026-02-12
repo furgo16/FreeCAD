@@ -622,20 +622,34 @@ class Component(ArchIFC.IfcProduct):
         return siblings
 
     def getExtrusionData(self, obj):
-        """Get the object's extrusion data.
+        """Retrieve the parametric "recipe" of the object's 3D volume.
 
-        Recursively scrape the Bases of the object, until a Base that is
-        derived from a <Part::Extrusion> is found. From there, copy the
-        extrusion to the (0,0,0) origin.
+        This method identifies the underlying 2D profile, extrusion vector, and local placement
+        required to reconstruct the object's solid geometry. It serves two primary roles:
 
-        With this copy, get the <Part.Face> the shape was originally
-        extruded from, the <Base.Vector> of the extrusion, and the
-        <Base.Placement> needed to move the copy back to its original
-        location/orientation. Return this data as a tuple.
+        1. Internal: It provides the geometric parameters needed by the execute() method to generate
+           the object's Shape.
+        2. External: It enables the IFC exporter to represent the object as an
+           'IfcExtrudedAreaSolid'. This preserves the parametric  intent (editability) in other BIM
+           software.
 
-        If an object derived from a <Part::Multifuse> is encountered, return
-        this data as a tuple containing lists. The lists will contain the same
-        data as above, from each of the objects within the multifuse.
+        Usage
+        -----
+        This method is intended to be overridden by specific Arch types (like Wall or Structure).
+        The overridden method should always call this base implementation via super() first to
+        handle generic cases like Clones or native Part Extrusions.
+
+        1. This base implementation checks for generic cases:
+           - Is the object a Clone? (returns the original's data)
+           - Is the Base a native `Part::Extrusion` or a more complex MultiFuse shape``? (returns
+             the calculated data)
+           - Is the object a clean wrapper around another Arch object? (returns the base's data)
+        2. If this method returns data, the subclass should return it immediately.
+        3. If this method returns `None`, the subclass proceeds with its own specific logic (e.g.,
+           determining a Wall's footprint from a linear wire).
+
+        If calculated, the returned profile must be moved (normalized) to the global origin via the
+        rebase() method.
 
         Parameters
         ----------
@@ -644,14 +658,25 @@ class Component(ArchIFC.IfcProduct):
 
         Returns
         -------
-        tuple
-            Tuple containing:
+        tuple or None
+            A tuple (Profile, Vector, Placement) where the elements represent either a single
+            extrusion or a parallel list of extrusions (in the case of MultiFuse assemblies):
 
-            1) The <Part.Face> the object was extruded from.
-            2) The <Base.Vector> of the extrusion.
-            3) The <Base.Placement> of the extrusion.
+            1. Profile: A <Part.Face> representing the 2D cross-section. The face is rebased so that
+               its geometric center (Center of Mass) is at (0,0,0) and its normal is aligned with
+               the Z-axis (0,0,1).
+            2. Vector: A <Base.Vector> representing the extrusion direction and length, defined in
+               the local coordinate system of the rebased profile.
+            3. Placement: A <Base.Placement> representing the transformation required to map the
+               rebased profile from its local (0,0,0) origin back to its actual position and
+               orientation in 3D space.
+
+            Returns `None` if the object cannot be resolved into a clean extrusion
+            by this base implementation.
         """
 
+        # If this object is a clone of another Arch object, delegate the retrieval of extrusion data
+        # to the original object.
         if hasattr(obj, "CloneOf"):
             if obj.CloneOf:
                 if hasattr(obj.CloneOf, "Proxy"):
@@ -661,7 +686,8 @@ class Component(ArchIFC.IfcProduct):
                             return data
 
         if obj.Base:
-            # the base is another arch object which can provide extrusion data
+            # The base is another Arch object which can provide extrusion data, delegate the
+            # retrieval of extrusion data to the base object
             if (
                 hasattr(obj.Base, "Proxy")
                 and hasattr(obj.Base.Proxy, "getExtrusionData")
@@ -670,25 +696,14 @@ class Component(ArchIFC.IfcProduct):
             ):
                 if obj.Base.Base:
                     if obj.Placement.Rotation.Angle < 0.0001:
-                        # if the final obj is rotated, this will screw all our IFC orientation. Better leave it like that then...
+                        # Only delegate if this object is not rotated. A rotation would result in an
+                        # incorrect IFC orientation.
                         data = obj.Base.Proxy.getExtrusionData(obj.Base)
                         if data:
                             return data
-                            # TODO above doesn't work if underlying shape is not at (0,0,0). But code below doesn't work well yet
-                            # add the displacement of the final object
-                            disp = obj.Shape.CenterOfMass.sub(obj.Base.Shape.CenterOfMass)
-                            if isinstance(data[2], (list, tuple)):
-                                ndata2 = []
-                                for p in data[2]:
-                                    p.move(disp)
-                                    ndata2.append(p)
-                                return (data[0], data[1], ndata2)
-                            else:
-                                ndata2 = data[2]
-                                ndata2.move(disp)
-                                return (data[0], data[1], ndata2)
 
-            # the base is a Part Extrusion
+            # The base is a Part Extrusion, so calculate the extrusion data from the base's shape
+            # and placement.
             elif obj.Base.isDerivedFrom("Part::Extrusion"):
                 if obj.Base.Base and len(obj.Base.Base.Shape.Wires) == 1:
                     base, placement = self.rebase(obj.Base.Base.Shape)
@@ -704,11 +719,15 @@ class Component(ArchIFC.IfcProduct):
                         placement = placement.multiply(obj.Base.Placement)
                     return (base, extrusion, placement)
 
+            # The base is a Part MultiFuse (Union), so iterate through its constituent objects to
+            # extract individual extrusion recipes.
             elif obj.Base.isDerivedFrom("Part::MultiFuse"):
                 rshapes = []
                 revs = []
                 rpls = []
                 for sub in obj.Base.Shapes:
+                    # For subobjects that are parametric Part Extrusions, read their properties
+                    # directly
                     if sub.isDerivedFrom("Part::Extrusion"):
                         if sub.Base:
                             base, placement = self.rebase(sub.Base.Shape)
@@ -725,6 +744,8 @@ class Component(ArchIFC.IfcProduct):
                             revs.append(extrusion)
                             rpls.append(placement)
                     else:
+                        # For all other subobjects, attempt to derive the extrusion data through
+                        # analysis of their raw geometry.
                         exdata = ArchCommands.getExtrusionData(sub.Shape)
                         if exdata:
                             base, placement = self.rebase(exdata[0])
@@ -768,27 +789,33 @@ class Component(ArchIFC.IfcProduct):
         else:
             v = shape[0].BoundBox.Center
 
-        # Get the object's normal.
+        # Get the object's normal, fall back to the Z-axis if it cannot be determined (e.g. the
+        # shape is too complex)
         n = DraftGeomUtils.getNormal(shape[0])
         if (not n) or (not n.Length):
             n = FreeCAD.Vector(0, 0, 1)
 
-        # Reverse the normal if the hint vector and the normal vector have more
-        # than a 90 degree angle between them.
+        # Reverse the normal if the hint vector and the normal vector are pointing in opposite
+        # directions (e.g. have more than 90° between them)
         if hint and hint.getAngle(n) > 1.58:
             n = n.negative()
 
+        # Calculate the rotation needed to align the face normal with the Z-axis. If the face is
+        # already horizontal but facing down (a 180-degree difference), we use an identity rotation
+        # to avoid an unnecessary flip, as the profile is already effectively "flat."
         r = FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), n)
         if round(abs(r.Angle), 8) == round(math.pi, 8):
             r = FreeCAD.Rotation()
 
+        # Normalize the geometry by centering it at (0,0,0) and rotating it flat onto the XY plane.
         shapes = []
         for s in shape:
-            ## TODO use Part.Shape() instead?
-            s = s.copy()
+            s = s.copy()  # TODO: use Part.Shape() instead?
             s.translate(v.negative())
             s.rotate(FreeCAD.Vector(0, 0, 0), r.Axis, math.degrees(-r.Angle))
             shapes.append(s)
+
+        # Record the original center and orientation in a placement used as a restoration handle.
         p = FreeCAD.Placement()
         p.Base = v
         p.Rotation = r
