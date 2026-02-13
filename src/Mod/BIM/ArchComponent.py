@@ -379,27 +379,55 @@ class Component(ArchIFC.IfcProduct):
         Component.setProperties(self, obj)
 
     def execute(self, obj):
-        """Method run when the object is recomputed.
+        """Standard C++ recompute callback to generate the object's 3D geometry.
 
-        If the object is a clone, just copy the shape it's cloned from.
+        This implementation serves as the primary geometry engine for generic Arch Components. It
+        follows a Constructive Solid Geometry (CSG) workflow: validating the base geometry,
+        duplicating it across axes if necessary, and applying boolean additions and subtractions.
 
-        Process subshapes of the object to add additions, and subtract
-        subtractions from the object's shape.
+        In summary, this method wraps a shape making it BIM-aware and providing it with CSG
+        capabilities.
+
+        Usage
+        -----
+        - Generic components (created via Arch.makeComponent) use this method directly to wrap
+          arbitrary shapes with BIM attributes.
+        - Specialized Arch objects (like Wall or Structure) override this method completely to
+          implement their specific topological logic, typically opting to call the individual helper
+          methods (like processSubShapes) instead of extending this via `super()`.
+
+        Coordinate space
+        ----------------
+        This implementation operates primarily in Global Space. It assumes the TopoShape provided by
+        the 'Base' object is already correctly positioned in the world.
 
         Parameters
         ----------
         obj: <App::FeaturePython>
-            The component object.
+            The document object to be recomputed.
         """
 
+        # Handle clones first: if this is a clone, copy the prototype shape and return immediately
+        # to avoid redundant geometry calculations.
         if self.clone(obj):
             return
+
+        # Validation: Ensure the 'Base' property points to an object that contains valid geometry
+        # (Shape or Mesh).
         if not self.ensureBase(obj):
             return
+
         if obj.Base:
+            # Array spreading behavior: if an Arch Axis or Grid is linked, duplicate the base shape
+            # at every coordinate point defined by that system.
             shape = self.spread(obj, obj.Base.Shape)
+
+            # Apply the BIM CSG engine to fuse additions and cut subtractions. Note that the
+            # conditional check skips guests (Windows/Doors).
             if obj.Additions or obj.Subtractions:
                 shape = self.processSubShapes(obj, shape)
+
+            # Assign the final processed TopoShape to the document object.
             obj.Shape = shape
 
     def dumps(self):
@@ -759,26 +787,52 @@ class Component(ArchIFC.IfcProduct):
         return None
 
     def rebase(self, shape, hint=None):
-        """Copy a shape to the (0,0,0) origin.
+        """Normalize a shape by flattening it and centering it to the global (0,0,0) origin.
 
-        Create a copy of a shape, such that its center of mass is in the
-        (0,0,0) origin.
+        This method creates a copy of the provided geometry, translates its center to the origin,
+        and rotates it so that its normal vector aligns with the global Z-axis (0,0,1). This
+        effectively places the shape flat on the global XY plane. The result will generally be used
+        as a "recipe" to rebuild extrusion-based shapes.
 
-        TODO Determine the way the shape is rotated by this method.
+        Normalization process
+        ---------------------
+        1. Translation: The shape is moved so its geometric center (Center of Mass or Bounding Box
+           center) sits exactly at (0,0,0).
+        2. Rotation: The shape is rotated until its surface normal aligns with the Z-axis (0,0,1).
 
-        Return the copy of the shape, and the <Base.Placement> needed to move
-        the copy back to its original location/orientation.
+        This process transforms any planar face into a "flat" version lying on the XY plane at the
+        origin. This isolation of coordinates is required for stable parametric operations and valid
+        IFC export.
+
+        Usage
+        -----
+        This is a core utility method intended to be called directly by derived classes
+        (specifically within their own getExtrusionData implementations). It should not be
+        overridden.
 
         Parameters
         ----------
-        shape: <Part.Shape>
-            The shape to copy.
+        shape: <Part.Shape> or list of <Part.Shape>
+            The shape(s) to be normalized.
         hint: <Base.Vector>, optional
-            If the angle between the normal vector of the shape, and the hint
-            vector is greater than 90 degrees, the normal will be reversed
-            before being rotated.
-        """
+            A direction vector used to resolve orientation ambiguity. If the angle between the face
+            normal and the hint is greater than 90 degrees, the normal is reversed before rotation
+            to prevent the profile from being flipped upside down.
 
+        Returns
+        -------
+        tuple
+            A tuple (NormalizedShape, RestorationPlacement) where:
+            1. NormalizedShape: A short-lived copy (or list of copies) of
+               the input geometry, centered at (0,0,0) and rotated flat
+               onto the XY plane.
+            2. RestorationPlacement: The <Base.Placement> required to move
+               the normalized geometry back to its original 3D position
+               and orientation.
+
+            If a list of shapes was provided as input, NormalizedShape
+            will be a parallel list of rebased shapes.
+        """
         import DraftGeomUtils
 
         # Get the object's center.
@@ -1292,9 +1346,41 @@ class Component(ArchIFC.IfcProduct):
         return hosts
 
     def ensureBase(self, obj):
-        """Returns False if the object has a Base but of the wrong type.
-        Either returns True"""
+        """Validate that the object's Base property points to a valid geometric source.
 
+        This method acts as a type-check guard for the 'Base' property. It ensures that the linked
+        object is a type that the Arch engine can use to derive geometry.
+
+        Supported types include:
+        1. Objects derived from Part::Feature (Sketches, Draft objects, etc.)
+        2. Objects derived from Mesh::Feature (Imported meshes)
+        3. Any object that possesses a valid Part.Shape property (any object with a valid shape).
+
+        Usage
+        -----
+        This is used as a mandatory guard clause at the beginning of the `execute()` method in
+        derived classes to prevent the geometry engine from attempting operations on invalid data
+        types (like spreadsheets or materials).
+
+        Example:
+            def execute(self, obj):
+                if not self.ensureBase(obj):
+                    return
+                # Proceed with geometry generation...
+
+        Parameters
+        ----------
+        obj: <App::FeaturePython>
+            The component object to validate.
+
+        Returns
+        -------
+        bool or None
+            - True: The Base exists and is a valid geometric type.
+            - False: The Base exists but is an invalid type (an error message
+              is printed to the Report View).
+            - None: No Base is currently assigned to the object.
+        """
         if getattr(obj, "Base", None):
             if obj.Base.isDerivedFrom("Part::Feature"):
                 return True
