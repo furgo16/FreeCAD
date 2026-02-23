@@ -748,11 +748,20 @@ if FreeCAD.GuiUp:
                 [
                     translate("Arch", "Solid Tiles"),
                     translate("Arch", "Parametric Pattern"),
-                    translate("Arch", "Hatch Pattern"),
                     translate("Arch", "Monolithic"),
+                    translate("Arch", "Hatch Pattern"),
                 ]
             )
-            self.combo_mode.setToolTip(translate("Arch", "The type of finish to create"))
+            self.combo_mode.setToolTip(
+                translate(
+                    "Arch",
+                    "How the finish is created and displayed:\n"
+                    "- Solid Tiles: Physical 3D tiles with real gaps. Best for accurate detail and counting.\n"
+                    "- Parametric Pattern: A grid of lines on a single slab. Faster to display than real tiles.\n"
+                    "- Monolithic: A single smooth surface. Ideal for paint, plaster, or seamless flooring.\n"
+                    "- Hatch Pattern: Technical drafting symbols (hatching) on a single slab.",
+                )
+            )
             self.combo_mode.setCurrentText(self.template.buffer.FinishMode)
             self.combo_mode.currentIndexChanged.connect(self.onModeChanged)
             top_form.addRow(translate("Arch", "Mode:"), self.combo_mode)
@@ -1054,17 +1063,21 @@ if FreeCAD.GuiUp:
                 self.combo_pattern.setCurrentIndex(0)
 
         def onModeChanged(self, index):
-            if index == 2:  # Hatch Pattern (Combo index 2)
-                self.geo_stack.setCurrentIndex(1)
-            elif index == 3:  # Monolithic (Combo index 3)
-                self.geo_stack.setCurrentIndex(2)
-            else:  # Solid Tiles or Parametric Pattern (Combo Indices 0, 1)
+            """Updates the UI layout based on the selected Finish Mode."""
+            if index <= 1:
+                # Solid Tiles or Parametric Pattern share the Tiles Page
                 self.geo_stack.setCurrentIndex(0)
+            elif index == 2:
+                # Monolithic uses its own empty/info page
+                self.geo_stack.setCurrentIndex(2)
+            else:
+                # Hatch Pattern uses the Hatch Page
+                self.geo_stack.setCurrentIndex(1)
+
+            # Disable visuals (textures) only for Hatch Pattern (Index 3)
+            self.vis_widget.setEnabled(index != 3)
 
             self.template.buffer.FinishMode = self.combo_mode.currentText()
-
-            # Enable visuals (textures) for all modes except Hatch Pattern (2)
-            self.vis_widget.setEnabled(index != 2)
 
         def onStaggerChanged(self, index):
             """Enables or disables the custom stagger input based on selection."""

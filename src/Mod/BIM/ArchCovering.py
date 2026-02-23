@@ -124,8 +124,12 @@ class _Covering(ArchComponent.Component):
                 "App::PropertyEnumeration",
                 "FinishMode",
                 "Covering",
-                "The type of finish to create",
-                ["Solid Tiles", "Parametric Pattern", "Hatch Pattern", "Monolithic"],
+                "How the finish is created and displayed:\n"
+                "- Solid Tiles: Physical 3D tiles with real gaps. Best for accurate detail and counting.\n"
+                "- Parametric Pattern: A grid of lines on a single slab. Faster to display than real tiles.\n"
+                "- Monolithic: A single smooth surface. Ideal for paint, plaster, or seamless flooring.\n"
+                "- Hatch Pattern: Technical drafting symbols (hatching) on a single slab.",
+                ["Solid Tiles", "Parametric Pattern", "Monolithic", "Hatch Pattern"],
             ),
             (
                 "App::PropertyEnumeration",
