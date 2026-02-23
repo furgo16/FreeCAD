@@ -623,11 +623,12 @@ class RectangularTessellator(Tessellator):
 class HatchTessellator(Tessellator):
     """Generates hatch patterns using the Draft Hatch engine."""
 
-    def __init__(self, filename, name, scale, rotation):
+    def __init__(self, filename, name, scale, rotation, thickness=0.0):
         self.filename = filename
         self.name = name
         self.scale = max(MIN_DIMENSION, scale)
         self.rotation = rotation
+        self.thickness = thickness
 
     def compute(self, substrate, origin, u_vec, v_vec, normal):
         import TechDraw
@@ -708,7 +709,15 @@ class HatchTessellator(Tessellator):
                         )
 
                     pat_shape.transformShape(to_global)
-                    final_geo = Part.makeCompound([substrate, pat_shape])
+                    if self.thickness != 0:
+                        # Create a monolithic solid body for realism
+                        body = substrate.extrude(normal * self.thickness)
+                        # Move lines to the top of the solid
+                        pat_shape.translate(normal.normalize() * (self.thickness + 0.05))
+                        final_geo = Part.makeCompound([body, pat_shape])
+                    else:
+                        pat_shape.translate(normal.normalize() * 0.05)
+                        final_geo = Part.makeCompound([substrate, pat_shape])
 
             except Exception as e:
                 FreeCAD.Console.PrintError(f"ArchTessellation error: {e}\n")
@@ -724,6 +733,7 @@ def create_tessellator(mode, config):
                 config.get("PatternName"),
                 config.get("PatternScale", 1.0),
                 config.get("Rotation", 0.0),
+                config.get("TileThickness", 0.0),
             )
         case "Solid Tiles" | "Parametric Pattern" | "Monolithic":
             tile_len = config.get("TileLength", 0)
