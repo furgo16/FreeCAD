@@ -621,7 +621,7 @@ if FreeCAD.GuiUp:
 
             # Task Box 1: Geometry
             self.geo_widget = QtGui.QWidget()
-            self.geo_widget.setWindowTitle(translate("Arch", "Geometry"))
+            self.geo_widget.setWindowTitle(translate("Arch", "Covering Definition"))
             self.geo_layout = QtGui.QVBoxLayout(self.geo_widget)
 
             # Register selection observer
@@ -634,12 +634,18 @@ if FreeCAD.GuiUp:
             self._setupGeometryStack()
             self._setupBottomControls()
 
-            # Task Box 2: Visuals
+            # Task Box 2: Layout and boundaries
+            self.layout_widget = QtGui.QWidget()
+            self.layout_widget.setWindowTitle(translate("Arch", "Layout and Boundaries"))
+            self.layout_layout = QtGui.QVBoxLayout(self.layout_widget)
+            self._setupLayoutControls()
+
+            # Task Box 3: Visuals
             self.vis_widget = QtGui.QWidget()
             self.vis_widget.setWindowTitle(translate("Arch", "Visuals"))
             self._setupVisualUI()
 
-            self.form = [self.geo_widget, self.vis_widget]
+            self.form = [self.geo_widget, self.layout_widget, self.vis_widget]
 
             # Sync the UI to the initialized template buffer (Handles both Edit and Creation modes)
             self._loadExistingData()
@@ -743,12 +749,19 @@ if FreeCAD.GuiUp:
                     translate("Arch", "Solid Tiles"),
                     translate("Arch", "Parametric Pattern"),
                     translate("Arch", "Hatch Pattern"),
+                    translate("Arch", "Monolithic"),
                 ]
             )
             self.combo_mode.setToolTip(translate("Arch", "The type of finish to create"))
             self.combo_mode.setCurrentText(self.template.buffer.FinishMode)
             self.combo_mode.currentIndexChanged.connect(self.onModeChanged)
             top_form.addRow(translate("Arch", "Mode:"), self.combo_mode)
+
+            # Thickness
+            self.sb_thick = self._setup_bound_spinbox(
+                "TileThickness", translate("Arch", "The thickness of the finish")
+            )
+            top_form.addRow(translate("Arch", "Thickness:"), self.sb_thick)
 
             self.geo_layout.addLayout(top_form)
 
@@ -757,6 +770,7 @@ if FreeCAD.GuiUp:
 
             self._setupTilesPage()
             self._setupHatchPage()
+            self._setupMonolithicPage()
 
             self.geo_layout.addWidget(self.geo_stack)
 
@@ -789,6 +803,75 @@ if FreeCAD.GuiUp:
             # Add to the main layout below the stack
             self.geo_layout.addWidget(self.chk_continue)
 
+        def _setupLayoutControls(self):
+            # Layout Group
+            grp_layout = QtGui.QGroupBox(translate("Arch", "Layout"))
+            form_layout = QtGui.QFormLayout()
+
+            self.combo_align = QtGui.QComboBox()
+            self.combo_align.addItems(
+                ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight"]
+            )
+            self.combo_align.setToolTip(translate("Arch", "The alignment of the tile grid"))
+            form_layout.addRow(translate("Arch", "Alignment:"), self.combo_align)
+
+            # U/V Offset (Calculated from AlignmentOffset)
+            h_uv = QtGui.QHBoxLayout()
+            self.sb_u_off = QtGui.QDoubleSpinBox()
+            self.sb_u_off.setRange(-1000000, 1000000)
+            self.sb_u_off.setSuffix(" mm")
+            self.sb_u_off.setToolTip(translate("Arch", "Shift the grid along U"))
+            self.sb_v_off = QtGui.QDoubleSpinBox()
+            self.sb_v_off.setRange(-1000000, 1000000)
+            self.sb_v_off.setSuffix(" mm")
+            self.sb_v_off.setToolTip(translate("Arch", "Shift the grid along V"))
+            h_uv.addWidget(self.sb_u_off)
+            h_uv.addWidget(self.sb_v_off)
+            form_layout.addRow(translate("Arch", "U, V Offset:"), h_uv)
+
+            self.sb_rot = self._setup_bound_spinbox(
+                "Rotation", translate("Arch", "Rotation of the finish")
+            )
+            form_layout.addRow(translate("Arch", "Rotation:"), self.sb_rot)
+
+            grp_layout.setLayout(form_layout)
+            self.layout_layout.addWidget(grp_layout)
+
+            # Boundaries Group
+            grp_bound = QtGui.QGroupBox(translate("Arch", "Boundaries"))
+            form_bound = QtGui.QFormLayout()
+
+            self.sb_setback = self._setup_bound_spinbox(
+                "BorderSetback",
+                translate("Arch", "Distance to offset the covering inwards from the boundary"),
+            )
+            form_bound.addRow(translate("Arch", "Border Setback:"), self.sb_setback)
+
+            h_perim = QtGui.QHBoxLayout()
+            self.combo_perim = QtGui.QComboBox()
+            self.combo_perim.addItems(
+                [
+                    translate("Arch", "None"),
+                    translate("Arch", "Half Interior"),
+                    translate("Arch", "Full Interior"),
+                    translate("Arch", "Custom"),
+                ]
+            )
+            self.combo_perim.setToolTip(
+                translate("Arch", "Create an expansion joint at the perimeter")
+            )
+            self.combo_perim.currentIndexChanged.connect(self.onPerimeterChanged)
+            h_perim.addWidget(self.combo_perim)
+
+            self.sb_perim_custom = self._setup_bound_spinbox(
+                "PerimeterJointWidth", translate("Arch", "Custom width for the perimeter joint")
+            )
+            h_perim.addWidget(self.sb_perim_custom)
+            form_bound.addRow(translate("Arch", "Perim. Joint:"), h_perim)
+
+            grp_bound.setLayout(form_bound)
+            self.layout_layout.addWidget(grp_bound)
+
         # Helper for binding properties to a quantity spinbox with default
         def _setup_bound_spinbox(self, prop_name, tooltip):
             """Binds a quantity spinbox to the template buffer."""
@@ -807,42 +890,44 @@ if FreeCAD.GuiUp:
             self.page_tiles = QtGui.QWidget()
             form = QtGui.QFormLayout()
 
+            # Tile Length
             self.sb_length = self._setup_bound_spinbox(
                 "TileLength", translate("Arch", "The length of the tiles")
             )
             form.addRow(translate("Arch", "Length:"), self.sb_length)
 
+            # Tile Width
             self.sb_width = self._setup_bound_spinbox(
                 "TileWidth", translate("Arch", "The width of the tiles")
             )
             form.addRow(translate("Arch", "Width:"), self.sb_width)
 
-            self.sb_thick = self._setup_bound_spinbox(
-                "TileThickness", translate("Arch", "The thickness of the tiles")
-            )
-            # Specify label so that we can refer to it later when switching thickness value and
-            # status when changing finish modes
-            self.lbl_thick = QtGui.QLabel(translate("Arch", "Thickness:"))
-            form.addRow(self.lbl_thick, self.sb_thick)
-
+            # Joint Width
             self.sb_joint = self._setup_bound_spinbox(
                 "JointWidth", translate("Arch", "The width of the joints between tiles")
             )
-            form.addRow(translate("Arch", "Joint:"), self.sb_joint)
+            form.addRow(translate("Arch", "Joint Width:"), self.sb_joint)
 
-            self.combo_align = QtGui.QComboBox()
-            self.combo_align.addItems(
-                ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight"]
+            # Stagger
+            h_stagger = QtGui.QHBoxLayout()
+            self.combo_stagger = QtGui.QComboBox()
+            self.combo_stagger.addItems(
+                [
+                    translate("Arch", "Stacked (None)"),
+                    translate("Arch", "Half Bond (1/2)"),
+                    translate("Arch", "Third Bond (1/3)"),
+                    translate("Arch", "Quarter Bond (1/4)"),
+                    translate("Arch", "Custom"),
+                ]
             )
-            self.combo_align.setToolTip(translate("Arch", "The alignment of the tile grid"))
-            self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
-            form.addRow(translate("Arch", "Alignment:"), self.combo_align)
+            self.combo_stagger.currentIndexChanged.connect(self.onStaggerChanged)
+            h_stagger.addWidget(self.combo_stagger)
 
-            self.sb_rot = self._setup_bound_spinbox(
-                "Rotation", translate("Arch", "Rotation of the finish")
+            self.sb_stagger_custom = self._setup_bound_spinbox(
+                "StaggerCustom", translate("Arch", "Custom offset for running bond rows")
             )
-            self.sb_rot.lineEdit().returnPressed.connect(self.accept)
-            form.addRow(translate("Arch", "Rotation:"), self.sb_rot)
+            h_stagger.addWidget(self.sb_stagger_custom)
+            form.addRow(translate("Arch", "Stagger:"), h_stagger)
 
             self.page_tiles.setLayout(form)
             self.geo_stack.addWidget(self.page_tiles)
@@ -873,14 +958,15 @@ if FreeCAD.GuiUp:
             self.sb_scale_hatch.lineEdit().returnPressed.connect(self.accept)
             form.addRow(translate("Arch", "Pattern Scale:"), self.sb_scale_hatch)
 
-            self.sb_rot_hatch = self._setup_bound_spinbox(
-                "Rotation", translate("Arch", "Rotation of the hatch pattern")
-            )
-            self.sb_rot_hatch.lineEdit().returnPressed.connect(self.accept)
-            form.addRow(translate("Arch", "Rotation:"), self.sb_rot_hatch)
-
             self.page_hatch.setLayout(form)
             self.geo_stack.addWidget(self.page_hatch)
+
+        def _setupMonolithicPage(self):
+            self.page_mono = QtGui.QWidget()
+            # Empty page or simple label
+            layout = QtGui.QVBoxLayout(self.page_mono)
+            layout.setContentsMargins(0, 0, 0, 0)
+            self.geo_stack.addWidget(self.page_mono)
 
         def _setupVisualUI(self):
             visual_form = QtGui.QFormLayout(self.vis_widget)
@@ -903,6 +989,10 @@ if FreeCAD.GuiUp:
             # Numerical values are auto-loaded by ExpressionBinding
             self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
 
+            if self.template.buffer.AlignmentOffset:
+                self.sb_u_off.setValue(self.template.buffer.AlignmentOffset.x)
+                self.sb_v_off.setValue(self.template.buffer.AlignmentOffset.y)
+
             # Load hatch pattern data
             pat_file = self.template.buffer.PatternFile
             if pat_file:
@@ -914,6 +1004,18 @@ if FreeCAD.GuiUp:
                 self.combo_pattern.setCurrentText(pat_name)
 
             self.sb_scale_hatch.setValue(self.template.buffer.PatternScale)
+
+            # Stagger data
+            if hasattr(self.template.buffer, "StaggerType"):
+                self.combo_stagger.setCurrentText(self.template.buffer.StaggerType)
+            # Trigger handler to update enabled state of custom box
+            self.onStaggerChanged(self.combo_stagger.currentIndex())
+
+            # Boundary data
+            if hasattr(self.template.buffer, "PerimeterJointType"):
+                self.combo_perim.setCurrentText(self.template.buffer.PerimeterJointType)
+            # Trigger handler to update enabled state of custom box
+            self.onPerimeterChanged(self.combo_perim.currentIndex())
 
             # Visuals (only applies if editing an existing object)
             if self.obj_to_edit and hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
@@ -952,14 +1054,27 @@ if FreeCAD.GuiUp:
                 self.combo_pattern.setCurrentIndex(0)
 
         def onModeChanged(self, index):
-            if index == 2:  # Hatch
+            if index == 2:  # Hatch Pattern (Combo index 2)
                 self.geo_stack.setCurrentIndex(1)
-                self.vis_widget.setEnabled(False)
-            else:  # Tiles (solid or parametric)
+            elif index == 3:  # Monolithic (Combo index 3)
+                self.geo_stack.setCurrentIndex(2)
+            else:  # Solid Tiles or Parametric Pattern (Combo Indices 0, 1)
                 self.geo_stack.setCurrentIndex(0)
-                self.vis_widget.setEnabled(index == 0)  # Only enable visual for solid tiles
 
             self.template.buffer.FinishMode = self.combo_mode.currentText()
+
+            # Enable the Visuals task box for both Solid Tiles (0) and Monolithic (3)
+            self.vis_widget.setEnabled(index in [0, 3])
+
+        def onStaggerChanged(self, index):
+            """Enables or disables the custom stagger input based on selection."""
+            is_custom = self.combo_stagger.currentText() == "Custom"
+            self.sb_stagger_custom.setEnabled(is_custom)
+
+        def onPerimeterChanged(self, index):
+            """Enables or disables the custom perimeter joint input based on selection."""
+            is_custom = self.combo_perim.currentText() == "Custom"
+            self.sb_perim_custom.setEnabled(is_custom)
 
         def isPicking(self):
             return self.btn_selection.isChecked()
@@ -1106,12 +1221,7 @@ if FreeCAD.GuiUp:
             obj.TileWidth = self.sb_width.property("rawValue")
             obj.TileThickness = self.sb_thick.property("rawValue")
             obj.JointWidth = self.sb_joint.property("rawValue")
-
-            # Handle rotation based on active mode
-            if self.combo_mode.currentText() == "Hatch Pattern":
-                obj.Rotation = self.sb_rot_hatch.property("rawValue")
-            else:
-                obj.Rotation = self.sb_rot.property("rawValue")
+            obj.Rotation = self.sb_rot.property("rawValue")
 
             # Sync enum properties
             obj.FinishMode = self.combo_mode.currentText()

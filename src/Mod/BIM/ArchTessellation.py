@@ -108,7 +108,8 @@ class RectangularTessellator(Tessellator):
         offset_u=0.0,
         offset_v=0.0,
         rotation=0.0,
-        extrude=False,
+        extrude=True,
+        monolithic=False,
     ):
         self.length = length
         self.width = width
@@ -118,6 +119,7 @@ class RectangularTessellator(Tessellator):
         self.offset_v = offset_v
         self.rotation = rotation
         self.extrude = extrude
+        self.monolithic = monolithic
 
     def compute(self, substrate, origin, u_vec, v_vec, normal):
         """
@@ -158,6 +160,31 @@ class RectangularTessellator(Tessellator):
             - quantities: Calculated BIM data (counts, areas, joint lengths).
             - status: The performance flag indicating how the result was computed.
         """
+
+        # Monolithic Fast-Path
+        if self.monolithic:
+            quantities = TessellationQuantities()
+            quantities.area_net = substrate.Area
+            quantities.length_perimeter = substrate.Length
+            quantities.count_full = 1
+            quantities.area_gross = quantities.area_net
+
+            if self.extrude and self.thickness > 0:
+                final_geo = substrate.extrude(normal * self.thickness)
+            else:
+                # 2D representation with micro-offset for visibility
+                mat = FreeCAD.Matrix()
+                mat.move(normal.normalize() * 0.05)
+                final_geo = substrate.transformGeometry(mat)
+
+            return TessellationResult(
+                geometry=final_geo,
+                quantities=quantities,
+                unit_area=quantities.area_net,
+                unit_volume=quantities.area_net * self.thickness,
+                status=TessellationStatus.OK,
+            )
+
         # Check for non-physical dimensions that would cause math errors.
         if self.length < TILE_MIN or self.width < TILE_MIN:
             return TessellationResult(status=TessellationStatus.INVALID_DIMENSIONS)

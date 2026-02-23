@@ -125,7 +125,7 @@ class _Covering(ArchComponent.Component):
                 "FinishMode",
                 "Covering",
                 "The type of finish to create",
-                ["Solid Tiles", "Parametric Pattern", "Hatch Pattern"],
+                ["Solid Tiles", "Parametric Pattern", "Hatch Pattern", "Monolithic"],
             ),
             (
                 "App::PropertyEnumeration",
@@ -158,13 +158,6 @@ class _Covering(ArchComponent.Component):
                 "Tiles",
                 "Custom offset for running bond rows",
                 0.0,
-            ),
-            (
-                "App::PropertyVector",
-                "AlignmentOffset",
-                "Tiles",
-                "A manual offset to shift the grid origin (X=U, Y=V). The Z component is ignored",
-                None,
             ),
             (
                 "App::PropertyVector",
@@ -340,6 +333,8 @@ class _Covering(ArchComponent.Component):
             obj.AlignmentOffset,
         )
 
+        is_solid_mode = obj.FinishMode in ["Solid Tiles", "Monolithic"]
+
         # Instantiate the tessellator
         # For parametric patterns, we want 2D geometry (wires/faces), not solids.
         # We force Extrude to False to instruct the tessellator to skip extrusion.
@@ -347,13 +342,14 @@ class _Covering(ArchComponent.Component):
             "TileLength": obj.TileLength.Value,
             "TileWidth": obj.TileWidth.Value,
             "JointWidth": obj.JointWidth.Value,
-            "TileOffset": obj.TileOffset,
             "Rotation": obj.Rotation.Value,
             "PatternFile": obj.PatternFile,
             "PatternName": obj.PatternName,
             "PatternScale": obj.PatternScale,
             "TileThickness": obj.TileThickness.Value,
-            "Extrude": obj.FinishMode == "Solid Tiles",
+            "Extrude": is_solid_mode,
+            "StaggerType": getattr(obj, "StaggerType", "Stacked (None)"),
+            "StaggerCustom": getattr(obj, "StaggerCustom", FreeCAD.Units.Quantity(0)).Value,
         }
         tessellator = ArchTessellation.create_tessellator(obj.FinishMode, config)
 
