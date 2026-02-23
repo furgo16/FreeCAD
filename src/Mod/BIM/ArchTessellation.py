@@ -220,7 +220,7 @@ class RectangularTessellator(Tessellator):
             # Physical path:
             # Standard mode. Generates "cutter" volumes and performs boolean subtraction.
             # Counts are derived by measuring the resulting solids/faces.
-            final_geo = self._generate_pyhsical_geo(substrate, normal, tr, params, quantities)
+            final_geo = self._generate_physical_geo(substrate, normal, tr, params, quantities)
 
         # Result assembly
         return TessellationResult(
@@ -449,73 +449,6 @@ class RectangularTessellator(Tessellator):
 
         return quantities
 
-    def _create_cutters(self, params, z_off, cut_thick):
-        """
-        Generates the cutter boxes for the boolean operations.
-
-        Parameters
-        ----------
-        params : dict
-            Grid parameters.
-        z_off : float
-            Z-offset for the cutter boxes.
-        cut_thick : float
-            Thickness of the cutter boxes.
-
-        Returns
-        -------
-        tuple
-            (list_h_cutters, list_v_cutters)
-        """
-        cutters_h, cutters_v = [], []
-
-        # Horizontal cutters
-        for j in range(-params["count_v"], params["count_v"]):
-            rv_off = self.offset_v if (j % 2 != 0) else 0
-            cutters_h.append(
-                Part.makeBox(
-                    params["full_len_u"],
-                    self.joint,
-                    cut_thick,
-                    FreeCAD.Vector(
-                        params["start_u"],
-                        j * params["step_v"] + self.width + rv_off,
-                        z_off,
-                    ),
-                )
-            )
-
-        # Vertical cutters
-        # Check if vertical alignment is stacked (grid) or staggered (running bond)
-        is_stack = abs(self.offset_u) < 1e-6 and abs(self.offset_v) < 1e-6
-
-        for i in range(-params["count_u"], params["count_u"]):
-            lu = i * params["step_u"] + self.length
-
-            if is_stack:
-                # Optimized: One long cutter per column
-                cutters_v.append(
-                    Part.makeBox(
-                        self.joint,
-                        params["full_len_v"],
-                        cut_thick,
-                        FreeCAD.Vector(lu, params["start_v"], z_off),
-                    )
-                )
-            else:
-                # Staggered: Individual cutters per tile
-                for j in range(-params["count_v"], params["count_v"]):
-                    rv = j * params["step_v"] + (self.offset_v if (j % 2 != 0) else 0)
-                    cutters_v.append(
-                        Part.makeBox(
-                            self.joint,
-                            params["step_v"],
-                            cut_thick,
-                            FreeCAD.Vector(lu + (self.offset_u if (j % 2 != 0) else 0), rv, z_off),
-                        )
-                    )
-        return cutters_h, cutters_v
-
     def _generate_analytical_geo(self, substrate, normal, params, final_cl, quantities):
         """
         Generates a monolithic representation of the tiled surface and calculates quantities
@@ -568,94 +501,113 @@ class RectangularTessellator(Tessellator):
 
         return final_geo
 
-    def _generate_pyhsical_geo(self, substrate, normal, placement, params, quantities):
+    def _generate_physical_geo(self, substrate, normal, placement, params, quantities):
         """
-        Generates the discrete tile geometry by physically cutting the substrate.
+        Generates the discrete tile geometry by intersecting a grid of tiles with the substrate.
 
-        In practice, "Physical" means the algorithm constructs a 3D grid of "cutter" volumes (boxes
-        representing the grout/joints) and performs a Boolean Cut operation on the base substrate.
+        In practice, "Physical" means the algorithm constructs a grid of individual tile
+        primitives (solids for 3D or faces for 2D) and performs a Boolean Intersection (common)
+        operation with the substrate.
 
-        This results in a compound of independent solids (or faces) for each individual tile. This
-        mode allows for:
-        1. Visualization of the gap between tiles.
+        This results in a compound of independent solids (or wires) for each individual tile.
+        This mode allows for:
+        1. Visualization of the physical gaps (joints) between tiles.
         2. Geometric counting, where "Full" vs "Partial" tiles are determined by measuring the
            volume/area of the resulting fragments against the theoretical unit size.
 
         Parameters
         ----------
         substrate : Part.Face
-            The base face.
+            The base face defining the boundary of the covering.
         normal : FreeCAD.Vector
-            The extrusion direction.
+            The extrusion direction for 3D tiles.
         placement : FreeCAD.Placement
-            The grid placement.
+            The grid placement defining origin and orientation.
         params : dict
-            Grid parameters.
+            Grid parameters including tile dimensions and counts.
         quantities : TessellationQuantities
-            The quantities object to populate with geometric counts.
+            The quantities object to populate with geometric counts and areas.
 
         Returns
         -------
         Part.Shape
-            The resulting geometry.
+            A compound containing the discrete tile geometry.
         """
-        z_off = -0.5 if self.thickness == 0 else -0.05
-        cut_thick = 1.0 if self.thickness == 0 else self.thickness * 1.1
+        import Part
+        import FreeCAD
 
-        cutters_h, cutters_v = self._create_cutters(params, z_off, cut_thick)
+        tiles = []
+        unit_area = params["unit_area"]
+        unit_volume = params["unit_volume"]
 
-        comp_h = Part.Compound(cutters_h) if cutters_h else None
-        comp_v = Part.Compound(cutters_v) if cutters_v else None
-        if comp_h:
-            comp_h.Placement = placement
-        if comp_v:
-            comp_v.Placement = placement
+        # Build the grid of tiles at local origin
+        for j in range(-params["count_v"], params["count_v"]):
+            # Calculate row-based stagger offsets
+            stagger_x = self.offset_u if (j % 2 != 0) else 0.0
+            stagger_y = self.offset_v if (j % 2 != 0) else 0.0
 
-        if self.extrude:
-            layer = substrate.extrude(normal * self.thickness)
-            if comp_h:
-                layer = layer.cut(comp_h)
-            if comp_v:
-                layer = layer.cut(comp_v)
-            final_geo = layer
+            v_pos = j * params["step_v"] + stagger_y
 
-            # Geometric counting (Solids)
+            for i in range(-params["count_u"], params["count_u"]):
+                u_pos = i * params["step_u"] + stagger_x
+
+                # Create tile at calculated local position
+                if self.extrude and self.thickness > 0:
+                    tile = Part.makeBox(
+                        self.length, self.width, self.thickness, FreeCAD.Vector(u_pos, v_pos, 0)
+                    )
+                else:
+                    tile = Part.makePlane(self.length, self.width, FreeCAD.Vector(u_pos, v_pos, 0))
+                tiles.append(tile)
+
+        # Combine and place
+        tile_grid = Part.makeCompound(tiles)
+        tile_grid.Placement = placement
+
+        # Boundary clipping
+        if self.extrude and self.thickness > 0:
+            # For solid mode, intersect the tiles with the substrate volume
+            substrate_vol = substrate.extrude(normal * self.thickness)
+            # Use common() to keep only the parts of tiles inside the substrate
+            final_geo = substrate_vol.common(tile_grid)
+
+            # Geometric counting (solids)
             full_cnt, part_cnt = 0, 0
             if final_geo.Solids:
                 for sol in final_geo.Solids:
-                    if sol.Volume >= (params["unit_volume"] * 0.995):
+                    # Tolerance check for full vs clipped tiles
+                    if sol.Volume >= (unit_volume * 0.995):
                         full_cnt += 1
                     else:
                         part_cnt += 1
         else:
-            layer = substrate
-            if comp_h:
-                layer = layer.cut(comp_h)
-            if comp_v:
-                layer = layer.cut(comp_v)
+            # For pattern mode, intersect the 2D tiles with the 2D substrate
+            final_geo = substrate.common(tile_grid)
 
-            # Geometric counting (Faces)
+            # Geometric counting (faces)
             full_cnt, part_cnt = 0, 0
-            if layer.Faces:
-                for f in layer.Faces:
-                    if f.Area >= (params["unit_area"] * 0.995):
+            if final_geo.Faces:
+                for f in final_geo.Faces:
+                    if f.Area >= (unit_area * 0.995):
                         full_cnt += 1
                     else:
                         part_cnt += 1
 
-            # Convert to wires for 2D representation
-            wires = [wire for f in layer.Faces for wire in f.Wires]
+            # Convert the resulting faces to wires for 2D visual representation
+            wires = [wire for f in final_geo.Faces for wire in f.Wires]
             if wires:
-                final_geo = Part.Compound(wires)
+                final_geo = Part.makeCompound(wires)
+                # Apply micro-offset to prevent Z-fighting with the base face
                 mat = FreeCAD.Matrix()
                 mat.move(normal.normalize() * 0.05)
                 final_geo = final_geo.transformGeometry(mat)
             else:
                 final_geo = Part.Shape()
 
+        # Update Quantity Take-Off metadata
         quantities.count_full = full_cnt
         quantities.count_partial = part_cnt
-        quantities.area_gross = (full_cnt + part_cnt) * params["unit_area"]
+        quantities.area_gross = (full_cnt + part_cnt) * unit_area
         quantities.waste_area = max(0.0, quantities.area_gross - quantities.area_net)
 
         return final_geo
