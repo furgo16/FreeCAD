@@ -596,11 +596,18 @@ class RectangularTessellator(Tessellator):
             # Convert the resulting faces to wires for 2D visual representation
             wires = [wire for f in final_geo.Faces for wire in f.Wires]
             if wires:
-                final_geo = Part.makeCompound(wires)
-                # Apply micro-offset to prevent Z-fighting with the base face
-                mat = FreeCAD.Matrix()
-                mat.move(normal.normalize() * 0.05)
-                final_geo = final_geo.transformGeometry(mat)
+                pattern_lines = Part.makeCompound(wires)
+
+                if self.thickness > 0:
+                    # Create a monolithic solid body for realism at no performance cost
+                    body = substrate.extrude(normal * self.thickness)
+                    # Move lines to the top of the solid
+                    # Apply micro-offset to prevent Z-fighting with the body/base face
+                    pattern_lines.translate(normal.normalize() * (self.thickness + 0.05))
+                    final_geo = Part.makeCompound([body, pattern_lines])
+                else:
+                    pattern_lines.translate(normal.normalize() * 0.05)
+                    final_geo = pattern_lines
             else:
                 final_geo = Part.Shape()
 
