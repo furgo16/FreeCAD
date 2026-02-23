@@ -1089,10 +1089,7 @@ if FreeCAD.GuiUp:
                 params.set_param_arch("CoveringLength", self.template.buffer.TileLength.Value)
                 params.set_param_arch("CoveringWidth", self.template.buffer.TileWidth.Value)
                 params.set_param_arch("CoveringJoint", self.template.buffer.JointWidth.Value)
-                if self.template.buffer.FinishMode == "Solid Tiles":
-                    params.set_param_arch(
-                        "CoveringThickness", self.template.buffer.TileThickness.Value
-                    )
+                params.set_param_arch("CoveringThickness", self.template.buffer.TileThickness.Value)
 
         def _sync_ui_to_target(self):
             """
@@ -1125,6 +1122,17 @@ if FreeCAD.GuiUp:
                 obj.PatternFile = self.le_pat.text()
                 obj.PatternName = self.combo_pattern.currentText()
                 obj.PatternScale = self.sb_scale_hatch.value()
+
+            if hasattr(obj, "StaggerType"):
+                obj.StaggerType = self.combo_stagger.currentText()
+                obj.StaggerCustom = self.sb_stagger_custom.property("rawValue")
+
+            if hasattr(obj, "PerimeterJointType"):
+                obj.PerimeterJointType = self.combo_perim.currentText()
+                obj.PerimeterJointWidth = self.sb_perim_custom.property("rawValue")
+                obj.BorderSetback = self.sb_setback.property("rawValue")
+
+            obj.AlignmentOffset = FreeCAD.Vector(self.sb_u_off.value(), self.sb_v_off.value(), 0.0)
 
         def accept(self):
             """

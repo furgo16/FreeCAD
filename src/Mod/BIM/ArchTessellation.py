@@ -739,17 +739,32 @@ def create_tessellator(mode, config):
                 config.get("PatternScale", 1.0),
                 config.get("Rotation", 0.0),
             )
-        case "Solid Tiles" | "Parametric Pattern":
-            tile_offset = config.get("TileOffset", FreeCAD.Vector())
+        case "Solid Tiles" | "Parametric Pattern" | "Monolithic":
+            tile_len = config.get("TileLength", 0)
+
+            # Resolve Stagger Enum to Offset
+            stagger_type = config.get("StaggerType", "Stacked (None)")
+            offset_u = 0.0
+
+            if stagger_type == "Half Bond (1/2)":
+                offset_u = tile_len / 2.0
+            elif stagger_type == "Third Bond (1/3)":
+                offset_u = tile_len / 3.0
+            elif stagger_type == "Quarter Bond (1/4)":
+                offset_u = tile_len / 4.0
+            elif stagger_type == "Custom":
+                offset_u = config.get("StaggerCustom", 0.0)
+
             return RectangularTessellator(
-                config.get("TileLength", 0),
+                tile_len,
                 config.get("TileWidth", 0),
                 config.get("TileThickness", 0),
                 config.get("JointWidth", 0),
-                tile_offset.x,
-                tile_offset.y,
+                offset_u,
+                0.0,  # offset_v is always 0 now
                 config.get("Rotation", 0),
                 config.get("Extrude", True),
+                monolithic=(mode == "Monolithic"),
             )
         case _:
             return None
