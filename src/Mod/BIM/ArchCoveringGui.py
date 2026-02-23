@@ -588,6 +588,19 @@ if FreeCAD.GuiUp:
             else:
                 self.stored_thickness = params.get_param_arch("CoveringThickness")
 
+                self.template.buffer.PatternScale = 100.0
+                pat_file = params.get_param("HatchPatternFile")
+                if not pat_file or not os.path.exists(pat_file):
+                    pat_file = os.path.join(
+                        FreeCAD.getResourceDir(), "data", "examples", "FCPAT.pat"
+                    )
+                    if not os.path.exists(pat_file):
+                        pat_file = os.path.join(
+                            FreeCAD.getResourceDir(), "Mod", "TechDraw", "PAT", "FCPAT.pat"
+                        )
+                if os.path.exists(pat_file):
+                    self.template.buffer.PatternFile = pat_file
+
             # Smart Face Detection for pre-selection
             resolved_selection = []
             view_dir = self._get_view_direction()
@@ -630,12 +643,8 @@ if FreeCAD.GuiUp:
 
             self.form = [self.geo_widget, self.vis_widget]
 
-            # Handle defaults and initial state
-            if self.obj_to_edit:
-                self._loadExistingData()
-            else:
-                # Note: widget defaults are loaded in _setupTilesPage
-                pass
+            # Sync the UI to the initialized template buffer (Handles both Edit and Creation modes)
+            self._loadExistingData()
 
         def _updateSelectionUI(self):
             """Updates the selection text and tooltip based on current selection state."""
@@ -854,6 +863,18 @@ if FreeCAD.GuiUp:
             h_pat.addWidget(btn_browse_pat)
             form.addRow(translate("Arch", "Pattern File:"), h_pat)
 
+            self.combo_pattern = QtGui.QComboBox()
+            self.combo_pattern.setEditable(True)  # Allow custom input if parsing fails
+            self.combo_pattern.setToolTip(translate("Arch", "The name of the pattern to use"))
+            form.addRow(translate("Arch", "Pattern Name:"), self.combo_pattern)
+
+            self.sb_scale_hatch = QtGui.QDoubleSpinBox()
+            self.sb_scale_hatch.setRange(0.001, 1000000.0)
+            self.sb_scale_hatch.setDecimals(2)
+            self.sb_scale_hatch.setToolTip(translate("Arch", "The scale of the hatch pattern"))
+            self.sb_scale_hatch.lineEdit().returnPressed.connect(self.accept)
+            form.addRow(translate("Arch", "Pattern Scale:"), self.sb_scale_hatch)
+
             self.sb_rot_hatch = self._setup_bound_spinbox(
                 "Rotation", translate("Arch", "Rotation of the hatch pattern")
             )
@@ -876,6 +897,7 @@ if FreeCAD.GuiUp:
             visual_form.addRow(translate("Arch", "Texture Image:"), h_tex)
 
         def _loadExistingData(self):
+            # Sync the combobox and force the stacked widget to the correct page
             mode = self.template.buffer.FinishMode
             self.combo_mode.setCurrentText(mode)
             self.onModeChanged(self.combo_mode.currentIndex())
@@ -883,9 +905,20 @@ if FreeCAD.GuiUp:
             # Numerical values are auto-loaded by ExpressionBinding
             self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
 
-            self.le_pat.setText(self.template.buffer.PatternFile)
+            # Load hatch pattern data
+            pat_file = self.template.buffer.PatternFile
+            if pat_file:
+                self.le_pat.setText(pat_file)
+                self.updatePatterns(pat_file)
 
-            if hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
+            pat_name = self.template.buffer.PatternName
+            if pat_name:
+                self.combo_pattern.setCurrentText(pat_name)
+
+            self.sb_scale_hatch.setValue(self.template.buffer.PatternScale)
+
+            # Visuals (only applies if editing an existing object)
+            if self.obj_to_edit and hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
                 self.le_tex_image.setText(self.obj_to_edit.ViewObject.TextureImage)
 
         def browseTexture(self):
@@ -904,6 +937,21 @@ if FreeCAD.GuiUp:
             )[0]
             if fn:
                 self.le_pat.setText(fn)
+                self.updatePatterns(fn)  # Call helper
+
+        def updatePatterns(self, filename):
+            self.combo_pattern.clear()
+            if filename and os.path.exists(filename):
+                try:
+                    with open(filename, "r") as f:
+                        for line in f:
+                            if line.startswith("*"):
+                                # *PatternName, Description -> PatternName
+                                self.combo_pattern.addItem(line.split(",")[0][1:].strip())
+                except Exception:
+                    pass
+            if self.combo_pattern.count() > 0:
+                self.combo_pattern.setCurrentIndex(0)
 
         def onModeChanged(self, index):
             if index == 2:  # Hatch
@@ -1097,6 +1145,8 @@ if FreeCAD.GuiUp:
             # Sync file paths
             if obj.FinishMode == "Hatch Pattern":
                 obj.PatternFile = self.le_pat.text()
+                obj.PatternName = self.combo_pattern.currentText()
+                obj.PatternScale = self.sb_scale_hatch.value()
 
         def accept(self):
             """

@@ -633,17 +633,89 @@ class HatchTessellator(Tessellator):
         self.rotation = rotation
 
     def compute(self, substrate, origin, u_vec, v_vec, normal):
-        from draftobjects.hatch import Hatch
+        import TechDraw
+        import Part
+        import FreeCAD
+        import os
+
+        # Safety fallback: auto-detect pattern name if missing.
+        # Passing an empty name string to TechDraw.makeGeomHatch freezes FreeCAD.
+        if self.filename and not self.name and os.path.exists(self.filename):
+            try:
+                with open(self.filename, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("*"):
+                            # Extract name between '*' and ','
+                            parts = line.split(",")
+                            if parts:
+                                self.name = parts[0][1:].strip()
+                                break
+            except Exception as e:
+                FreeCAD.Console.PrintWarning(
+                    f"ArchTessellation: Could not read pattern file: {e}\n"
+                )
 
         final_geo = substrate
-        if self.filename:
-            pat = Hatch.hatch(
-                substrate, self.filename, self.name, scale=self.scale, rotation=self.rotation
-            )
-            if pat:
-                final_geo = Part.Compound([substrate, pat])
 
-        # Hatching does not calculate tile quantities
+        # Only proceed if we have both a file and a valid name
+        if self.filename and self.name:
+            try:
+                # Setup transformation to local XY plane
+                rot = FreeCAD.Rotation(u_vec, v_vec, normal, "XYZ")
+                pl = FreeCAD.Placement(origin, rot)
+                to_local = pl.inverse().toMatrix()
+                to_global = pl.toMatrix()
+
+                # Localize geometry
+                local_face = substrate.copy()
+                local_face.transformShape(to_local)
+
+                # Apply pattern rotation
+                if self.rotation:
+                    local_face.rotate(
+                        FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), -self.rotation
+                    )
+
+                # Generate hatch
+                param_grp = FreeCAD.ParamGet(
+                    "User parameter:BaseApp/Preferences/Mod/TechDraw/debug"
+                )
+                old_allow = (
+                    param_grp.GetBool("allowCrazyEdge")
+                    if "allowCrazyEdge" in param_grp.GetBools()
+                    else None
+                )
+                param_grp.SetBool("allowCrazyEdge", True)
+
+                pat_shape = None
+                try:
+                    pat_shape = TechDraw.makeGeomHatch(
+                        local_face, float(self.scale), str(self.name), str(self.filename)
+                    )
+                except Exception as e:
+                    FreeCAD.Console.PrintWarning(
+                        f"ArchTessellation: Hatch generation failed: {e}\n"
+                    )
+
+                # Restore preferences
+                if old_allow is None:
+                    param_grp.RemBool("allowCrazyEdge")
+                else:
+                    param_grp.SetBool("allowCrazyEdge", old_allow)
+
+                if pat_shape and len(pat_shape.Edges) > 0:
+                    # Restore global position
+                    if self.rotation:
+                        pat_shape.rotate(
+                            FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), self.rotation
+                        )
+
+                    pat_shape.transformShape(to_global)
+                    final_geo = Part.makeCompound([substrate, pat_shape])
+
+            except Exception as e:
+                FreeCAD.Console.PrintError(f"ArchTessellation error: {e}\n")
+
         return TessellationResult(geometry=final_geo)
 
 
