@@ -1063,8 +1063,8 @@ if FreeCAD.GuiUp:
 
             self.template.buffer.FinishMode = self.combo_mode.currentText()
 
-            # Enable the Visuals task box for both Solid Tiles (0) and Monolithic (3)
-            self.vis_widget.setEnabled(index in [0, 3])
+            # Enable visuals (textures) for all modes except Hatch Pattern (2)
+            self.vis_widget.setEnabled(index != 2)
 
         def onStaggerChanged(self, index):
             """Enables or disables the custom stagger input based on selection."""
