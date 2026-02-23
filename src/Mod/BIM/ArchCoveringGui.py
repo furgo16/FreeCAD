@@ -584,10 +584,8 @@ if FreeCAD.GuiUp:
             # Initialize state from existing object or defaults
             if self.obj_to_edit:
                 self.template.copy_from(self.obj_to_edit)
-                self.stored_thickness = self.obj_to_edit.TileThickness.Value
             else:
-                self.stored_thickness = params.get_param_arch("CoveringThickness")
-
+                # Preload hatch defaults
                 self.template.buffer.PatternScale = 100.0
                 pat_file = params.get_param("HatchPatternFile")
                 if not pat_file or not os.path.exists(pat_file):
@@ -961,22 +959,6 @@ if FreeCAD.GuiUp:
                 self.geo_stack.setCurrentIndex(0)
                 self.vis_widget.setEnabled(index == 0)  # Only enable visual for solid tiles
 
-                if index == 0:  # Solid tiles mode
-                    self.sb_thick.setEnabled(True)
-                    # Restore stored thickness
-                    self.sb_thick.setProperty("rawValue", self.stored_thickness)
-                    self.template.buffer.TileThickness = self.stored_thickness
-
-                else:  # Parametric pattern mode
-                    # Save current thickness before zeroing
-                    if self.sb_thick.isEnabled():
-                        self.stored_thickness = self.sb_thick.property("rawValue")
-
-                    # Disable and zero
-                    self.sb_thick.setEnabled(False)
-                    self.sb_thick.setProperty("rawValue", 0.0)
-                    self.template.buffer.TileThickness = 0.0
-
             self.template.buffer.FinishMode = self.combo_mode.currentText()
 
         def isPicking(self):
@@ -1125,11 +1107,7 @@ if FreeCAD.GuiUp:
             # float value, ignoring unit strings
             obj.TileLength = self.sb_length.property("rawValue")
             obj.TileWidth = self.sb_width.property("rawValue")
-
-            # Handle conditional properties
-            if self.sb_thick.isEnabled():
-                obj.TileThickness = self.sb_thick.property("rawValue")
-
+            obj.TileThickness = self.sb_thick.property("rawValue")
             obj.JointWidth = self.sb_joint.property("rawValue")
 
             # Handle rotation based on active mode

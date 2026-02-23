@@ -99,7 +99,17 @@ class Tessellator(ABC):
 class RectangularTessellator(Tessellator):
     """Generates standard grid or running bond patterns."""
 
-    def __init__(self, length, width, thickness, joint, offset_u=0.0, offset_v=0.0, rotation=0.0):
+    def __init__(
+        self,
+        length,
+        width,
+        thickness,
+        joint,
+        offset_u=0.0,
+        offset_v=0.0,
+        rotation=0.0,
+        extrude=False,
+    ):
         self.length = length
         self.width = width
         self.thickness = thickness
@@ -107,6 +117,7 @@ class RectangularTessellator(Tessellator):
         self.offset_u = offset_u
         self.offset_v = offset_v
         self.rotation = rotation
+        self.extrude = extrude
 
     def compute(self, substrate, origin, u_vec, v_vec, normal):
         """
@@ -517,7 +528,7 @@ class RectangularTessellator(Tessellator):
         ]
         quantities.waste_area = max(0.0, quantities.area_gross - quantities.area_net)
 
-        if self.thickness > 0:
+        if self.extrude:
             monolithic = substrate.extrude(normal * self.thickness)
         else:
             mat = FreeCAD.Matrix()
@@ -573,7 +584,7 @@ class RectangularTessellator(Tessellator):
         if comp_v:
             comp_v.Placement = placement
 
-        if self.thickness > 0:
+        if self.extrude:
             layer = substrate.extrude(normal * self.thickness)
             if comp_h:
                 layer = layer.cut(comp_h)
@@ -738,6 +749,7 @@ def create_tessellator(mode, config):
                 tile_offset.x,
                 tile_offset.y,
                 config.get("Rotation", 0),
+                config.get("Extrude", True),
             )
         case _:
             return None

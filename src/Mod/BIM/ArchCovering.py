@@ -295,7 +295,7 @@ class _Covering(ArchComponent.Component):
 
         # Instantiate the tessellator
         # For parametric patterns, we want 2D geometry (wires/faces), not solids.
-        # We force thickness to 0.0 to instruct the tessellator to skip extrusion.
+        # We force Extrude to False to instruct the tessellator to skip extrusion.
         config = {
             "TileLength": obj.TileLength.Value,
             "TileWidth": obj.TileWidth.Value,
@@ -305,9 +305,8 @@ class _Covering(ArchComponent.Component):
             "PatternFile": obj.PatternFile,
             "PatternName": obj.PatternName,
             "PatternScale": obj.PatternScale,
-            "TileThickness": (
-                0.0 if obj.FinishMode == "Parametric Pattern" else obj.TileThickness.Value
-            ),
+            "TileThickness": obj.TileThickness.Value,
+            "Extrude": obj.FinishMode == "Solid Tiles",
         }
         tessellator = ArchTessellation.create_tessellator(obj.FinishMode, config)
 
