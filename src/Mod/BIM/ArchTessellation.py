@@ -607,7 +607,7 @@ class RectangularTessellator(Tessellator):
                     final_geo = Part.makeCompound([body, pattern_lines])
                 else:
                     pattern_lines.translate(normal.normalize() * 0.05)
-                    final_geo = pattern_lines
+                    final_geo = Part.makeCompound([substrate, pattern_lines])
             else:
                 final_geo = Part.Shape()
 
@@ -709,7 +709,7 @@ class HatchTessellator(Tessellator):
                         )
 
                     pat_shape.transformShape(to_global)
-                    if self.thickness != 0:
+                    if self.thickness > 0:
                         # Create a monolithic solid body for realism
                         body = substrate.extrude(normal * self.thickness)
                         # Move lines to the top of the solid
