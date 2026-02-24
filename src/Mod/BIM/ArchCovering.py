@@ -305,43 +305,104 @@ class _Covering(ArchComponent.Component):
         """Method called when a property is changed."""
         ArchComponent.Component.onChanged(self, obj, prop)
 
+    def _get_layout_frame(self, face):
+        """
+        Returns a right-handed orthonormal basis derived from the face surface.
+        The basis is normalized to ensure tangents point in positive global
+        directions, providing a predictable origin for semantic alignments like
+        'BottomLeft'.
+        """
+        u_vec, v_vec, normal, center = Arch.getFaceUV(face)
+
+        # We align the surface normal with the topological orientation of the
+        # face. If the face is reversed (common in solid sub-elements), we
+        # negate the normal to ensure the basis points out from the material.
+        if face.Orientation == "Reversed":
+            normal = -normal
+
+        # We force the tangents into positive global directions. This ensures
+        # that local coordinate calculations for grid alignment consistently
+        # map to the physical orientation of the object in world space.
+        for vec in [u_vec, v_vec]:
+            vals = [abs(vec.x), abs(vec.y), abs(vec.z)]
+            max_val = max(vals)
+            if max_val > 0.1:
+                if vec[vals.index(max_val)] < 0:
+                    vec.multiply(-1)
+
+        # Ensure strict orthogonality and right-handedness (U x V = N).
+        u_vec.normalize()
+        v_vec = normal.cross(u_vec).normalize()
+        u_vec = v_vec.cross(normal).normalize()
+
+        return u_vec, v_vec, normal, center
+
     def execute(self, obj):
         """
-        Calculates the geometry and updates the shape of the object.
-
-        This is a standard FreeCAD C++ callback triggered during a document recompute. It translates
-        the numerical and textual properties of the object into a geometric representation (solids,
-        faces, or wires) assigned to the `Shape` attribute.
-
-        Parameters
-        ----------
-        obj : Part::FeaturePython
-            The base C++ object whose shape is updated.
+        Calculates the geometry of the finish by localizing the base face to the
+        origin, applying offsets, and executing the pattern tessellator. The
+        result is then moved to the original global position using the object's
+        placement property to avoid double transformations.
         """
+        import Part
+
         if self.clone(obj):
             return
 
-        # Resolve target geometry upon which to apply the covering
         base_face = Arch.getFaceGeometry(obj.Base)
         if not base_face:
             return
 
-        # Establish local coordinate system and grid alignment
-        u_vec, v_vec, normal, center_point = Arch.getFaceUV(base_face)
-        origin = Arch.getFaceGridOrigin(
-            base_face,
-            center_point,
-            u_vec,
-            v_vec,
+        # We establish a stable coordinate system based on the global axes.
+        u_vec, v_vec, normal, center = self._get_layout_frame(base_face)
+
+        # Define the transformation to the local XY plane at the origin.
+        local_pl = FreeCAD.Placement(center, FreeCAD.Rotation(u_vec, v_vec, normal))
+        to_local = local_pl.inverse().toMatrix()
+
+        # Create the localized face.
+        safe_face = base_face.copy()
+        safe_face.transformShape(to_local)
+
+        effective_face = safe_face
+        joint_contribution = 0.0
+        if hasattr(obj, "PerimeterJointType"):
+            if obj.PerimeterJointType == "Half Interior":
+                joint_contribution = obj.JointWidth.Value / 2.0
+            elif obj.PerimeterJointType == "Full Interior":
+                joint_contribution = obj.JointWidth.Value
+            elif obj.PerimeterJointType == "Custom":
+                joint_contribution = obj.PerimeterJointWidth.Value
+
+        # Apply boundary offsets in the local space.
+        total_offset = obj.BorderSetback.Value + joint_contribution
+        if total_offset > 0:
+            shrunk = safe_face.makeOffset2D(-total_offset)
+            if not shrunk.isNull() and shrunk.Area > 0:
+                effective_face = shrunk
+
+        # Determine the pattern origin in local space.
+        origin_local = Arch.getFaceGridOrigin(
+            effective_face,
+            FreeCAD.Vector(0, 0, 0),
+            FreeCAD.Vector(1, 0, 0),
+            FreeCAD.Vector(0, 1, 0),
             obj.TileAlignment,
             obj.AlignmentOffset,
         )
 
-        is_solid_mode = obj.FinishMode in ["Solid Tiles", "Monolithic"]
+        # Shift the origin so that the tile boundary aligns with the face edge.
+        if obj.TileAlignment == "Center":
+            origin_local.x -= obj.TileLength.Value / 2.0
+            origin_local.y -= obj.TileWidth.Value / 2.0
+        else:
+            if "Right" in obj.TileAlignment:
+                origin_local.x += obj.JointWidth.Value
+            if "Top" in obj.TileAlignment:
+                origin_local.y += obj.JointWidth.Value
 
-        # Instantiate the tessellator
-        # For parametric patterns, we want 2D geometry (wires/faces), not solids.
-        # We force Extrude to False to instruct the tessellator to skip extrusion.
+        # Configure the tessellator.
+        is_solid_mode = obj.FinishMode in ["Solid Tiles", "Monolithic"]
         config = {
             "TileLength": obj.TileLength.Value,
             "TileWidth": obj.TileWidth.Value,
@@ -355,57 +416,56 @@ class _Covering(ArchComponent.Component):
             "StaggerType": getattr(obj, "StaggerType", "Stacked (None)"),
             "StaggerCustom": getattr(obj, "StaggerCustom", FreeCAD.Units.Quantity(0)).Value,
         }
+
         tessellator = ArchTessellation.create_tessellator(obj.FinishMode, config)
+        res = tessellator.compute(
+            effective_face,
+            origin_local,
+            FreeCAD.Vector(1, 0, 0),
+            FreeCAD.Vector(0, 1, 0),
+            FreeCAD.Vector(0, 0, 1),
+        )
 
-        # Generate pattern cutters and metadata
-        res = tessellator.compute(base_face, origin, u_vec, v_vec, normal)
-
+        # Update the UI with any status messages from the engine.
         match res.status:
             case ArchTessellation.TessellationStatus.INVALID_DIMENSIONS:
                 FreeCAD.Console.PrintWarning(
-                    translate(
-                        "Arch",
-                        "The specified tile size is too "
-                        "small to be modeled. The covering shape has been reset.",
-                    )
-                    + "\n"
+                    translate("Arch", "The specified tile size is too small to be modeled.") + "\n"
                 )
                 obj.Shape = Part.Shape()
                 return
             case ArchTessellation.TessellationStatus.JOINT_TOO_SMALL:
                 FreeCAD.Console.PrintWarning(
-                    translate(
-                        "Arch",
-                        "The joint width is too small to "
-                        "model individual units. The covering will be shown as a continuous surface.",
-                    )
+                    translate("Arch", "The joint width is too small to model individual units.")
                     + "\n"
                 )
             case ArchTessellation.TessellationStatus.COUNT_TOO_HIGH:
                 FreeCAD.Console.PrintWarning(
                     translate(
                         "Arch",
-                        "The number of tiles is too high "
-                        "for individual units to be modeled. The covering will be shown as a "
-                        "continuous surface for better performance.",
+                        "The number of tiles is too high for individual units to be modeled.",
                     )
                     + "\n"
                 )
             case ArchTessellation.TessellationStatus.EXTREME_COUNT:
                 FreeCAD.Console.PrintWarning(
                     translate(
-                        "Arch",
-                        "The number of tiles is extremely "
-                        "high. Layout lines are hidden to maintain 3D performance.",
+                        "Arch", "The number of tiles is extremely high. Layout lines are hidden."
                     )
                     + "\n"
                 )
             case _:
                 pass
 
-        obj.Shape = res.geometry
+        if res.geometry:
+            # We assign the local-space geometry and update the object
+            # placement to position it correctly in world space.
+            obj.Shape = res.geometry
+            obj.Placement = local_pl
+        else:
+            obj.Shape = Part.Shape()
 
-        # Sync quantities
+        # Update Quantity Take-Off properties.
         obj.CountFullTiles = res.quantities.count_full
         obj.CountPartialTiles = res.quantities.count_partial
         obj.NetArea = res.quantities.area_net
