@@ -668,6 +668,11 @@ class HatchTessellator(Tessellator):
                 local_face = substrate.copy()
                 local_face.transformShape(to_local)
 
+                # TechDraw requires a Part.Face instance, but Boolean operations and transforms
+                # return generic Part.Shapes.
+                if hasattr(local_face, "Faces") and len(local_face.Faces) > 0:
+                    local_face = local_face.Faces[0]
+
                 # Apply pattern rotation
                 if self.rotation:
                     local_face.rotate(
@@ -709,15 +714,18 @@ class HatchTessellator(Tessellator):
                         )
 
                     pat_shape.transformShape(to_global)
-                    if self.thickness > 0:
-                        # Create a monolithic solid body for realism
-                        body = substrate.extrude(normal * self.thickness)
-                        # Move lines to the top of the solid
+
+                # Ensure the covering has thickness even if the hatch lines fail.
+                if self.thickness > 0:
+                    body = substrate.extrude(normal * self.thickness)
+                    if pat_shape and len(pat_shape.Edges) > 0:
                         pat_shape.translate(normal.normalize() * (self.thickness + 0.05))
-                        final_geo = Part.makeCompound([body, pat_shape])
+                        final_geo = Part.Compound([body, pat_shape])
                     else:
-                        pat_shape.translate(normal.normalize() * 0.05)
-                        final_geo = Part.makeCompound([substrate, pat_shape])
+                        final_geo = body
+                elif pat_shape and len(pat_shape.Edges) > 0:
+                    pat_shape.translate(normal.normalize() * 0.05)
+                    final_geo = Part.Compound([substrate, pat_shape])
 
             except Exception as e:
                 FreeCAD.Console.PrintError(f"ArchTessellation error: {e}\n")

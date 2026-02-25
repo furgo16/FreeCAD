@@ -353,7 +353,7 @@ class _Covering(ArchComponent.Component):
         if not base_face:
             return
 
-        # We establish a stable coordinate system based on the global axes.
+        # Establish a stable coordinate system based on the global axes.
         u_vec, v_vec, normal, center = self._get_layout_frame(base_face)
 
         # Define the transformation to the local XY plane at the origin.
@@ -375,11 +375,30 @@ class _Covering(ArchComponent.Component):
                 joint_contribution = obj.PerimeterJointWidth.Value
 
         # Apply boundary offsets in the local space.
-        total_offset = obj.BorderSetback.Value + joint_contribution
-        if total_offset > 0:
-            shrunk = safe_face.makeOffset2D(-total_offset)
-            if not shrunk.isNull() and shrunk.Area > 0:
-                effective_face = shrunk
+        # Process boundaries: setbacks apply only to the perimeter, joints apply to all edges.
+        border_setback = obj.BorderSetback.Value
+        total_outer_offset = border_setback + joint_contribution
+
+        if total_outer_offset > 0 or joint_contribution > 0:
+            # Shrink the outer boundary and expand holes separately to prevent topological deformation.
+            new_outer_face = Part.Face(safe_face.OuterWire).makeOffset2D(-total_outer_offset)
+            new_inner_wires = []
+            for w in safe_face.Wires:
+                if not w.isSame(safe_face.OuterWire):
+                    # Positive offset on a hole face expands the void into the material.
+                    new_hole_face = Part.Face(w).makeOffset2D(joint_contribution)
+                    new_inner_wires.append(new_hole_face.OuterWire)
+
+            # Subtract the expanded holes from the shrunken perimeter.
+            # The Boolean approach handles winding orders and topology automatically.
+            shrunk_face = new_outer_face
+            for hw in new_inner_wires:
+                hole_face = Part.Face(hw)
+                if not hole_face.isNull():
+                    shrunk_face = shrunk_face.cut(hole_face)
+
+            if not shrunk_face.isNull() and shrunk_face.Area > 0:
+                effective_face = shrunk_face
 
         # Determine the pattern origin in local space.
         origin_local = Arch.getFaceGridOrigin(
