@@ -68,6 +68,7 @@ class TessellationResult:
     def __init__(
         self,
         geometry=None,
+        placement=None,
         centerlines=None,
         quantities=None,
         unit_area=0.0,
@@ -75,6 +76,7 @@ class TessellationResult:
         status=TessellationStatus.OK,
     ):
         self.geometry = geometry
+        self.placement = placement or FreeCAD.Placement()
         self.centerlines = centerlines
         self.quantities = quantities if quantities else TessellationQuantities()
         self.unit_area = unit_area
@@ -86,7 +88,7 @@ class Tessellator(ABC):
     """Abstract base class for pattern tessellators."""
 
     @abstractmethod
-    def compute(self, substrate, origin, u_vec, v_vec, normal):
+    def compute(self, substrate_3d, origin_3d, u_vec, normal):
         """
         Generates the tessellated geometry.
         substrate: Part.Face to be tiled.
@@ -121,7 +123,7 @@ class RectangularTessellator(Tessellator):
         self.extrude = extrude
         self.monolithic = monolithic
 
-    def compute(self, substrate, origin, u_vec, v_vec, normal):
+    def compute(self, substrate_3d, origin_3d, u_vec, normal):
         """
         Orchestrates the generation of the tessellated geometry, selecting between physical
         discretization and analytical approximation based on performance constraints.
@@ -160,6 +162,19 @@ class RectangularTessellator(Tessellator):
             - quantities: Calculated BIM data (counts, areas, joint lengths).
             - status: The performance flag indicating how the result was computed.
         """
+        # Establish strict orthonormal basis for the local coordinate system
+        n_vec = FreeCAD.Vector(normal).normalize()
+        u_vec = FreeCAD.Vector(u_vec).normalize()
+        v_vec = n_vec.cross(u_vec).normalize()
+        u_vec = v_vec.cross(n_vec).normalize()
+
+        # Derive placement matrix and localization transform
+        placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
+        to_local = placement.inverse().toMatrix()
+
+        # Localize substrate to the origin
+        substrate = substrate_3d.copy()
+        substrate.transformShape(to_local)
 
         # Monolithic Fast-Path
         if self.monolithic:
@@ -179,6 +194,7 @@ class RectangularTessellator(Tessellator):
 
             return TessellationResult(
                 geometry=final_geo,
+                placement=placement,
                 quantities=quantities,
                 unit_area=quantities.area_net,
                 unit_volume=quantities.area_net * self.thickness,
@@ -198,7 +214,12 @@ class RectangularTessellator(Tessellator):
         # Generate the centerline wires for visualization.
         # If status is EXTREME_COUNT, this returns empty lists to save memory.
         tr, h_edges, v_edges, final_cl = self._generate_visual_grid(
-            origin, u_vec, v_vec, normal, params, substrate.BoundBox
+            FreeCAD.Vector(0, 0, 0),
+            FreeCAD.Vector(1, 0, 0),
+            FreeCAD.Vector(0, 1, 0),
+            FreeCAD.Vector(0, 0, 1),
+            params,
+            substrate.BoundBox,
         )
 
         # Quantity take-off (linear measurements)
@@ -224,12 +245,13 @@ class RectangularTessellator(Tessellator):
 
         # Result assembly
         return TessellationResult(
-            final_geo,
-            final_cl,
-            quantities,
-            params["unit_area"],
-            params["unit_volume"],
-            params["status"],
+            geometry=final_geo,
+            placement=placement,
+            centerlines=final_cl,
+            quantities=quantities,
+            unit_area=params["unit_area"],
+            unit_volume=params["unit_volume"],
+            status=params["status"],
         )
 
     def _calculate_grid_params(self, substrate):
@@ -630,11 +652,21 @@ class HatchTessellator(Tessellator):
         self.rotation = rotation
         self.thickness = thickness
 
-    def compute(self, substrate, origin, u_vec, v_vec, normal):
+    def compute(self, substrate_3d, origin_3d, u_vec, normal):
         import TechDraw
         import Part
-        import FreeCAD
         import os
+
+        n_vec = FreeCAD.Vector(normal).normalize()
+        u_vec = FreeCAD.Vector(u_vec).normalize()
+        v_vec = n_vec.cross(u_vec).normalize()
+        u_vec = v_vec.cross(n_vec).normalize()
+
+        placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
+        to_local = placement.inverse().toMatrix()
+
+        substrate = substrate_3d.copy()
+        substrate.transformShape(to_local)
 
         # Safety fallback: auto-detect pattern name if missing.
         # Passing an empty name string to TechDraw.makeGeomHatch freezes FreeCAD.
@@ -658,14 +690,17 @@ class HatchTessellator(Tessellator):
         # Only proceed if we have both a file and a valid name
         if self.filename and self.name:
             try:
-                # Setup transformation to local XY plane
-                rot = FreeCAD.Rotation(u_vec, v_vec, normal, "XYZ")
-                pl = FreeCAD.Placement(origin, rot)
-                to_local = pl.inverse().toMatrix()
-                to_global = pl.toMatrix()
+                # Establish strict orthonormal basis
+                n_vec = FreeCAD.Vector(normal).normalize()
+                u_vec = FreeCAD.Vector(u_vec).normalize()
+                v_vec = n_vec.cross(u_vec).normalize()
+                u_vec = v_vec.cross(n_vec).normalize()
+
+                placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
+                to_local = placement.inverse().toMatrix()
 
                 # Localize geometry
-                local_face = substrate.copy()
+                local_face = substrate_3d.copy()
                 local_face.transformShape(to_local)
 
                 # TechDraw requires a Part.Face instance, but Boolean operations and transforms
@@ -713,24 +748,24 @@ class HatchTessellator(Tessellator):
                             FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), self.rotation
                         )
 
-                    pat_shape.transformShape(to_global)
-
                 # Ensure the covering has thickness even if the hatch lines fail.
                 if self.thickness > 0:
                     body = substrate.extrude(normal * self.thickness)
                     if pat_shape and len(pat_shape.Edges) > 0:
                         pat_shape.translate(normal.normalize() * (self.thickness + 0.05))
-                        final_geo = Part.Compound([body, pat_shape])
+                        final_local_geo = Part.Compound([body, pat_shape])
                     else:
-                        final_geo = body
+                        final_local_geo = body
                 elif pat_shape and len(pat_shape.Edges) > 0:
                     pat_shape.translate(normal.normalize() * 0.05)
-                    final_geo = Part.Compound([substrate, pat_shape])
+                    final_local_geo = Part.Compound([substrate, pat_shape])
 
             except Exception as e:
                 FreeCAD.Console.PrintError(f"ArchTessellation error: {e}\n")
+        else:
+            final_local_geo = local_face
 
-        return TessellationResult(geometry=final_geo)
+        return TessellationResult(geometry=final_local_geo, placement=placement)
 
 
 def create_tessellator(mode, config):

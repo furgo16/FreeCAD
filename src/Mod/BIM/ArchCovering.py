@@ -337,34 +337,10 @@ class _Covering(ArchComponent.Component):
 
         return u_vec, v_vec, normal, center
 
-    def execute(self, obj):
-        """
-        Calculates the geometry of the finish by localizing the base face to the
-        origin, applying offsets, and executing the pattern tessellator. The
-        result is then moved to the original global position using the object's
-        placement property to avoid double transformations.
-        """
+    def _apply_boundaries(self, base_face, obj):
         import Part
 
-        if self.clone(obj):
-            return
-
-        base_face = Arch.getFaceGeometry(obj.Base)
-        if not base_face:
-            return
-
-        # Establish a stable coordinate system based on the global axes.
-        u_vec, v_vec, normal, center = self._get_layout_frame(base_face)
-
-        # Define the transformation to the local XY plane at the origin.
-        local_pl = FreeCAD.Placement(center, FreeCAD.Rotation(u_vec, v_vec, normal))
-        to_local = local_pl.inverse().toMatrix()
-
-        # Create the localized face.
-        safe_face = base_face.copy()
-        safe_face.transformShape(to_local)
-
-        effective_face = safe_face
+        effective_face = base_face.copy()
         joint_contribution = 0.0
         if hasattr(obj, "PerimeterJointType"):
             if obj.PerimeterJointType == "Half Interior":
@@ -374,18 +350,17 @@ class _Covering(ArchComponent.Component):
             elif obj.PerimeterJointType == "Custom":
                 joint_contribution = obj.PerimeterJointWidth.Value
 
-        # Apply boundary offsets in the local space.
+        # Apply boundary offsets in global space.
         # Process boundaries: setbacks apply only to the perimeter, joints apply to all edges.
         border_setback = obj.BorderSetback.Value
         total_outer_offset = border_setback + joint_contribution
 
         if total_outer_offset > 0 or joint_contribution > 0:
-            # Shrink the outer boundary and expand holes separately to prevent topological deformation.
-            new_outer_face = Part.Face(safe_face.OuterWire).makeOffset2D(-total_outer_offset)
+            new_outer_face = Part.Face(effective_face.OuterWire).makeOffset2D(-total_outer_offset)
             new_inner_wires = []
-            for w in safe_face.Wires:
-                if not w.isSame(safe_face.OuterWire):
-                    # Positive offset on a hole face expands the void into the material.
+
+            for w in effective_face.Wires:
+                if not w.isSame(effective_face.OuterWire):
                     new_hole_face = Part.Face(w).makeOffset2D(joint_contribution)
                     new_inner_wires.append(new_hole_face.OuterWire)
 
@@ -400,25 +375,47 @@ class _Covering(ArchComponent.Component):
             if not shrunk_face.isNull() and shrunk_face.Area > 0:
                 effective_face = shrunk_face
 
-        # Determine the pattern origin in local space.
-        origin_local = Arch.getFaceGridOrigin(
-            effective_face,
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Vector(1, 0, 0),
-            FreeCAD.Vector(0, 1, 0),
-            obj.TileAlignment,
-            obj.AlignmentOffset,
+        return effective_face
+
+    def _calculate_origin(self, effective_face, center, u_vec, v_vec, obj):
+        import Arch
+
+        origin_3d = Arch.getFaceGridOrigin(
+            effective_face, center, u_vec, v_vec, obj.TileAlignment, obj.AlignmentOffset
         )
 
-        # Shift the origin so that the tile boundary aligns with the face edge.
         if obj.TileAlignment == "Center":
-            origin_local.x -= obj.TileLength.Value / 2.0
-            origin_local.y -= obj.TileWidth.Value / 2.0
+            origin_3d = origin_3d - u_vec * (obj.TileLength.Value / 2.0)
+            origin_3d = origin_3d - v_vec * (obj.TileWidth.Value / 2.0)
         else:
             if "Right" in obj.TileAlignment:
-                origin_local.x += obj.JointWidth.Value
+                origin_3d = origin_3d + u_vec * obj.JointWidth.Value
             if "Top" in obj.TileAlignment:
-                origin_local.y += obj.JointWidth.Value
+                origin_3d = origin_3d + v_vec * obj.JointWidth.Value
+        return origin_3d
+
+    def execute(self, obj):
+        """
+        Calculates the geometry of the finish by deriving the boundaries in world space
+        and calling the pattern tessellator.
+        """
+        import Part
+
+        if self.clone(obj):
+            return
+
+        base_face = Arch.getFaceGeometry(obj.Base)
+        if not base_face:
+            return
+
+        # Establish a stable coordinate system based on the global axes.
+        u_vec, v_vec, normal, center = self._get_layout_frame(base_face)
+
+        # Apply boundary offsets in global space.
+        effective_face = self._apply_boundaries(base_face, obj)
+
+        # Determine the pattern origin in global space.
+        origin_3d = self._calculate_origin(effective_face, center, u_vec, v_vec, obj)
 
         # Configure the tessellator.
         is_solid_mode = obj.FinishMode in ["Solid Tiles", "Monolithic"]
@@ -436,13 +433,13 @@ class _Covering(ArchComponent.Component):
             "StaggerCustom": getattr(obj, "StaggerCustom", FreeCAD.Units.Quantity(0)).Value,
         }
 
+        # The tessellator handles world-to-local transformations internally.
         tessellator = ArchTessellation.create_tessellator(obj.FinishMode, config)
         res = tessellator.compute(
             effective_face,
-            origin_local,
-            FreeCAD.Vector(1, 0, 0),
-            FreeCAD.Vector(0, 1, 0),
-            FreeCAD.Vector(0, 0, 1),
+            origin_3d,
+            u_vec,
+            normal,
         )
 
         # Update the UI with any status messages from the engine.
@@ -477,12 +474,12 @@ class _Covering(ArchComponent.Component):
                 pass
 
         if res.geometry:
-            # We assign the local-space geometry and update the object
-            # placement to position it correctly in world space.
+            # We assign the local-space geometry and the placement returned by the engine.
             obj.Shape = res.geometry
-            obj.Placement = local_pl
+            obj.Placement = res.placement
         else:
             obj.Shape = Part.Shape()
+            obj.Placement = FreeCAD.Placement()
 
         # Update Quantity Take-Off properties.
         obj.CountFullTiles = res.quantities.count_full
