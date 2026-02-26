@@ -1051,9 +1051,25 @@ if FreeCAD.GuiUp:
 
         def _setupMonolithicPage(self):
             self.page_mono = QtGui.QWidget()
-            # Empty page or simple label
-            layout = QtGui.QVBoxLayout(self.page_mono)
-            layout.setContentsMargins(0, 0, 0, 0)
+            form = QtGui.QFormLayout(self.page_mono)
+            form.setContentsMargins(0, 0, 0, 0)
+
+            self.sb_length_mono = self._setup_bound_spinbox("TileLength", "Pattern repeat length")
+            self.sb_width_mono = self._setup_bound_spinbox("TileWidth", "Pattern repeat width")
+
+            form.addRow(translate("Arch", "Length:"), self.sb_length_mono)
+            form.addRow(translate("Arch", "Width:"), self.sb_width_mono)
+
+            # Informational context for the user
+            lbl_info = QtGui.QLabel(
+                translate(
+                    "Arch",
+                    "Note: In Monolithic mode, dimensions control the repeat interval of the optional surface texture.",
+                )
+            )
+            lbl_info.setWordWrap(True)
+            lbl_info.setStyleSheet("font-style: italic; color: gray;")
+            form.addRow(lbl_info)
             self.geo_stack.addWidget(self.page_mono)
 
         def _setupVisualUI(self):
@@ -1069,6 +1085,20 @@ if FreeCAD.GuiUp:
             h_tex.addWidget(self.le_tex_image)
             h_tex.addWidget(btn_browse)
             visual_form.addRow(translate("Arch", "Texture Image:"), h_tex)
+
+            # Texture scaling multiplier for visual fine-tuning
+            h_scale = QtGui.QHBoxLayout()
+            self.sb_tex_scale_u = QtGui.QDoubleSpinBox()
+            self.sb_tex_scale_u.setRange(0.001, 1000.0)
+            self.sb_tex_scale_u.setSingleStep(0.1)
+            self.sb_tex_scale_u.setToolTip(translate("Arch", "Horizontal texture multiplier"))
+            self.sb_tex_scale_v = QtGui.QDoubleSpinBox()
+            self.sb_tex_scale_v.setRange(0.001, 1000.0)
+            self.sb_tex_scale_v.setSingleStep(0.1)
+            self.sb_tex_scale_v.setToolTip(translate("Arch", "Vertical texture multiplier"))
+            h_scale.addWidget(self.sb_tex_scale_u)
+            h_scale.addWidget(self.sb_tex_scale_v)
+            visual_form.addRow(translate("Arch", "Texture Scale:"), h_scale)
 
         def _loadExistingData(self):
             # Sync the combobox and force the stacked widget to the correct page
@@ -1117,6 +1147,13 @@ if FreeCAD.GuiUp:
             if self.obj_to_edit and hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
                 self.le_tex_image.setText(self.obj_to_edit.ViewObject.TextureImage)
 
+            # Load texture scale values from the view object
+            vobj = (
+                self.obj_to_edit.ViewObject if self.obj_to_edit else self.template.buffer.ViewObject
+            )
+            self.sb_tex_scale_u.setValue(vobj.TextureScale.x)
+            self.sb_tex_scale_v.setValue(vobj.TextureScale.y)
+
         def browseTexture(self):
             fn = QtGui.QFileDialog.getOpenFileName(
                 self.vis_widget,
@@ -1155,7 +1192,7 @@ if FreeCAD.GuiUp:
                 # Solid Tiles or Parametric Pattern share the Tiles Page
                 self.geo_stack.setCurrentIndex(0)
             elif index == 2:
-                # Monolithic uses its own empty/info page
+                # Monolithic uses the dedicated texture period page
                 self.geo_stack.setCurrentIndex(2)
             else:
                 # Hatch Pattern uses the Hatch Page
@@ -1527,6 +1564,15 @@ if FreeCAD.GuiUp:
                 obj.PatternFile = self.le_pat.text()
                 obj.PatternName = self.combo_pattern.currentText()
                 obj.PatternScale = self.sb_scale_hatch.value()
+
+            # Sync visual multipliers back to the view object
+            vobj = (
+                self.obj_to_edit.ViewObject if self.obj_to_edit else self.template.buffer.ViewObject
+            )
+            vobj.TextureImage = self.le_tex_image.text()
+            vobj.TextureScale = FreeCAD.Vector(
+                self.sb_tex_scale_u.value(), self.sb_tex_scale_v.value(), 0
+            )
 
             if hasattr(obj, "StaggerType"):
                 obj.StaggerType = self.combo_stagger.currentText()
