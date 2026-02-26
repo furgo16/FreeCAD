@@ -176,20 +176,6 @@ class _Covering(ArchComponent.Component):
                 "Distance to offset the covering inwards from the base boundary",
                 0.0,
             ),
-            (
-                "App::PropertyEnumeration",
-                "PerimeterJointType",
-                "Boundaries",
-                "How to handle the joint between the covering and the boundary",
-                ["None", "Half Interior", "Full Interior", "Custom"],
-            ),
-            (
-                "App::PropertyLength",
-                "PerimeterJointWidth",
-                "Boundaries",
-                "Custom width for the perimeter joint",
-                0.0,
-            ),
             ("App::PropertyArea", "NetArea", "Quantities", "The surface area of the base face", 0),
             (
                 "App::PropertyArea",
@@ -339,37 +325,40 @@ class _Covering(ArchComponent.Component):
     def _apply_boundaries(self, base_face, obj):
         import Part
 
+        # This function is probably more complex than it should be. But if we want to support
+        # boundary offsets on faces with holes, we cannot use Part.makeFace() because it crashes
+        # if the boundary edges cross an inner hole.
         effective_face = base_face.copy()
-        joint_contribution = 0.0
-        if hasattr(obj, "PerimeterJointType"):
-            if obj.PerimeterJointType == "Half Interior":
-                joint_contribution = obj.JointWidth.Value / 2.0
-            elif obj.PerimeterJointType == "Full Interior":
-                joint_contribution = obj.JointWidth.Value
-            elif obj.PerimeterJointType == "Custom":
-                joint_contribution = obj.PerimeterJointWidth.Value
-
-        # Apply boundary offsets in global space.
-        # Process boundaries: setbacks apply only to the perimeter, joints apply to all edges.
         border_setback = obj.BorderSetback.Value
-        total_outer_offset = border_setback + joint_contribution
 
-        if total_outer_offset > 0 or joint_contribution > 0:
-            new_outer_face = Part.Face(effective_face.OuterWire).makeOffset2D(-total_outer_offset)
-            new_inner_wires = []
+        if border_setback > 0:
+            # Shrink the outer boundary
+            shrunk_outer_face = Part.Face(effective_face.OuterWire).makeOffset2D(-border_setback)
 
-            for w in effective_face.Wires:
-                if not w.isSame(effective_face.OuterWire):
-                    new_hole_face = Part.Face(w).makeOffset2D(joint_contribution)
-                    new_inner_wires.append(new_hole_face.OuterWire)
+            if shrunk_outer_face.isNull() or shrunk_outer_face.Area <= 0:
+                return effective_face
 
-            # Subtract the expanded holes from the shrunken perimeter.
-            # The Boolean approach handles winding orders and topology automatically.
-            shrunk_face = new_outer_face
-            for hw in new_inner_wires:
-                hole_face = Part.Face(hw)
-                if not hole_face.isNull():
-                    shrunk_face = shrunk_face.cut(hole_face)
+            # Extract inner wires (holes)
+            outer_hash = effective_face.OuterWire.hashCode()
+            inner_wires = [w for w in effective_face.Wires if w.hashCode() != outer_hash]
+
+            if not inner_wires:
+                return shrunk_outer_face
+
+            # Boolean cut
+            shrunk_face = shrunk_outer_face
+            for w in inner_wires:
+                # Force the wire into a valid, forward-facing Part.Face Passing it as a list to
+                # Part.Face() triggers FaceMakerSimple, which ensures the right
+                # clockwise/counter-clockwise orientation.
+                try:
+                    hole_face = Part.Face([w])
+                    if not hole_face.isNull():
+                        # The boolean cut handles cases where the hole intersects the perimeter or
+                        # falls completely outside it.
+                        shrunk_face = shrunk_face.cut(hole_face)
+                except Exception:
+                    pass  # Skip problematic holes but keep processing the rest
 
             if not shrunk_face.isNull() and shrunk_face.Area > 0:
                 effective_face = shrunk_face

@@ -919,35 +919,6 @@ if FreeCAD.GuiUp:
             )
             form_bound.addRow(translate("Arch", "Border Setback:"), self.sb_setback)
 
-            h_perim = QtGui.QHBoxLayout()
-            self.combo_perim = QtGui.QComboBox()
-            self.combo_perim.addItems(
-                [
-                    translate("Arch", "None"),
-                    translate("Arch", "Half Interior"),
-                    translate("Arch", "Full Interior"),
-                    translate("Arch", "Custom"),
-                ]
-            )
-            self.combo_perim.setToolTip(
-                translate(
-                    "Arch",
-                    "How to handle the gap at the boundary:\n"
-                    "- None: no joint\n"
-                    "- Half Interior: gap is half the Joint Width\n"
-                    "- Full Interior: gap matches the Joint Width\n"
-                    "- Custom: manual width value",
-                )
-            )
-            self.combo_perim.currentIndexChanged.connect(self.onPerimeterChanged)
-            h_perim.addWidget(self.combo_perim)
-
-            self.sb_perim_custom = self._setup_bound_spinbox(
-                "PerimeterJointWidth", translate("Arch", "Custom width for the perimeter joint")
-            )
-            h_perim.addWidget(self.sb_perim_custom)
-            form_bound.addRow(translate("Arch", "Perim. Joint:"), h_perim)
-
             grp_bound.setLayout(form_bound)
             self.layout_layout.addWidget(grp_bound)
 
@@ -1137,12 +1108,6 @@ if FreeCAD.GuiUp:
             # Trigger handler to update enabled state of custom box
             self.onStaggerChanged(self.combo_stagger.currentIndex())
 
-            # Boundary data
-            if hasattr(self.template.buffer, "PerimeterJointType"):
-                self.combo_perim.setCurrentText(self.template.buffer.PerimeterJointType)
-            # Trigger handler to update enabled state of custom box
-            self.onPerimeterChanged(self.combo_perim.currentIndex())
-
             # Visuals (only applies if editing an existing object)
             if self.obj_to_edit and hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
                 self.le_tex_image.setText(self.obj_to_edit.ViewObject.TextureImage)
@@ -1207,11 +1172,6 @@ if FreeCAD.GuiUp:
             """Enables or disables the custom stagger input based on selection."""
             is_custom = self.combo_stagger.currentText() == "Custom"
             self.sb_stagger_custom.setEnabled(is_custom)
-
-        def onPerimeterChanged(self, index):
-            """Enables or disables the custom perimeter joint input based on selection."""
-            is_custom = self.combo_perim.currentText() == "Custom"
-            self.sb_perim_custom.setEnabled(is_custom)
 
         def isPicking(self):
             return self.btn_selection.isChecked()
@@ -1578,10 +1538,7 @@ if FreeCAD.GuiUp:
                 obj.StaggerType = self.combo_stagger.currentText()
                 obj.StaggerCustom = self.sb_stagger_custom.property("rawValue")
 
-            if hasattr(obj, "PerimeterJointType"):
-                obj.PerimeterJointType = self.combo_perim.currentText()
-                obj.PerimeterJointWidth = self.sb_perim_custom.property("rawValue")
-                obj.BorderSetback = self.sb_setback.property("rawValue")
+            obj.BorderSetback = self.sb_setback.property("rawValue")
 
         def accept(self):
             """
