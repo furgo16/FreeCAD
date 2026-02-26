@@ -923,17 +923,18 @@ if FreeCAD.GuiUp:
             self.layout_layout.addWidget(grp_bound)
 
         # Helper for binding properties to a quantity spinbox with default
-        def _setup_bound_spinbox(self, prop_name, tooltip):
+        def _setup_bound_spinbox(self, prop_name, tooltip=None):
             """Binds a quantity spinbox to the template buffer."""
             sb = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
             prop = getattr(self.template.buffer, prop_name)
-            sb.setProperty("unit", prop.getUserPreferred()[2])
-            sb.setToolTip(translate("Arch", tooltip))
 
-            # This enables the f(x) icon, but we don't rely on it for value syncing anymore
+            sb.setProperty("value", prop)
+            if tooltip:
+                sb.setToolTip(translate("Arch", tooltip))
+
+            # This enables the f(x) icon
             FreeCADGui.ExpressionBinding(sb).bind(self.template.buffer, prop_name)
 
-            sb.setProperty("rawValue", prop.Value)
             return sb
 
         def _setupTilesPage(self):
@@ -1294,7 +1295,7 @@ if FreeCAD.GuiUp:
             wp_u_proj = wp.u - normal * wp.u.dot(normal)
             if wp_u_proj.Length > 1e-7:
                 angle = DraftVecUtils.angle(u_basis, wp_u_proj, normal)
-                self.sb_rot.setProperty("rawValue", math.degrees(angle))
+                self.sb_rot.setProperty("value", math.degrees(angle))
 
             # Project the working plane origin onto the face to determine the offset.
             pt_on_face = DraftGeomUtils.project_point_on_plane(wp.position, center, normal)
@@ -1502,13 +1503,13 @@ if FreeCAD.GuiUp:
             """
             obj = self.template.buffer
 
-            # Sync numeric properties directly from the widget property. Use "rawValue" to get the
-            # float value, ignoring unit strings
-            obj.TileLength = self.sb_length.property("rawValue")
-            obj.TileWidth = self.sb_width.property("rawValue")
-            obj.TileThickness = self.sb_thick.property("rawValue")
-            obj.JointWidth = self.sb_joint.property("rawValue")
-            obj.Rotation = self.sb_rot.property("rawValue")
+            # Sync numeric properties directly from the widget property. Use "value" to get the
+            # unit-converted float value.
+            obj.TileLength = self.sb_length.property("value")
+            obj.TileWidth = self.sb_width.property("value")
+            obj.TileThickness = self.sb_thick.property("value")
+            obj.JointWidth = self.sb_joint.property("value")
+            obj.Rotation = self.sb_rot.property("value")
 
             # Sync enum properties
             obj.FinishMode = self.combo_mode.currentText()
@@ -1536,9 +1537,9 @@ if FreeCAD.GuiUp:
 
             if hasattr(obj, "StaggerType"):
                 obj.StaggerType = self.combo_stagger.currentText()
-                obj.StaggerCustom = self.sb_stagger_custom.property("rawValue")
+                obj.StaggerCustom = self.sb_stagger_custom.property("value")
 
-            obj.BorderSetback = self.sb_setback.property("rawValue")
+            obj.BorderSetback = self.sb_setback.property("value")
 
         def accept(self):
             """
