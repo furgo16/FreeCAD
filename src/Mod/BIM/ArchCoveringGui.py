@@ -813,19 +813,32 @@ if FreeCAD.GuiUp:
             self.geo_layout.addWidget(self.chk_continue)
 
         def _setupLayoutControls(self):
-            # Layout Group
-            grp_layout = QtGui.QGroupBox(translate("Arch", "Layout"))
-            form_layout = QtGui.QFormLayout()
+            grp_layout = QtGui.QGroupBox(translate("Arch", "Alignment"))
+            vbox = QtGui.QVBoxLayout()
 
+            # Branch 1: Preset
+            h_preset = QtGui.QHBoxLayout()
+            self.radio_preset = QtGui.QRadioButton(translate("Arch", "Preset:"))
             self.combo_align = QtGui.QComboBox()
             self.combo_align.addItems(
                 ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight"]
             )
-            self.combo_align.setToolTip(translate("Arch", "The alignment of the tile grid"))
-            form_layout.addRow(translate("Arch", "Alignment:"), self.combo_align)
+            h_preset.addWidget(self.radio_preset)
+            h_preset.addWidget(self.combo_align)
+            vbox.addLayout(h_preset)
 
-            # U/V Offset (Calculated from AlignmentOffset)
-            h_uv = QtGui.QHBoxLayout()
+            # Branch 2: Custom
+            h_custom = QtGui.QHBoxLayout()
+            self.radio_custom = QtGui.QRadioButton(translate("Arch", "Custom:"))
+            self.btn_pick = QtGui.QPushButton(translate("Arch", "Pick Origin"))
+            self.btn_pick.setCheckable(True)
+            self.btn_match_wp = QtGui.QPushButton(translate("Arch", "Match Working Plane"))
+            h_custom.addWidget(self.radio_custom)
+            h_custom.addWidget(self.btn_pick)
+            h_custom.addWidget(self.btn_match_wp)
+            vbox.addLayout(h_custom)
+
+            # Custom offsets
             self.sb_u_off = QtGui.QDoubleSpinBox()
             self.sb_u_off.setRange(-1000000, 1000000)
             self.sb_u_off.setSuffix(" mm")
@@ -834,19 +847,26 @@ if FreeCAD.GuiUp:
             self.sb_v_off.setRange(-1000000, 1000000)
             self.sb_v_off.setSuffix(" mm")
             self.sb_v_off.setToolTip(translate("Arch", "Shift the grid along V"))
-            h_uv.addWidget(self.sb_u_off)
-            h_uv.addWidget(self.sb_v_off)
-            form_layout.addRow(translate("Arch", "U, V Offset:"), h_uv)
+            form_offsets = QtGui.QFormLayout()
+            form_offsets.addRow(translate("Arch", "U Offset:"), self.sb_u_off)
+            form_offsets.addRow(translate("Arch", "V Offset:"), self.sb_v_off)
+            vbox.addLayout(form_offsets)
 
-            self.sb_rot = self._setup_bound_spinbox(
-                "Rotation", translate("Arch", "Rotation of the finish")
-            )
-            form_layout.addRow(translate("Arch", "Rotation:"), self.sb_rot)
+            # Global rotation
+            form_rot = QtGui.QFormLayout()
+            self.sb_rot = self._setup_bound_spinbox("Rotation", "Manual rotation nudge")
+            form_rot.addRow(translate("Arch", "Rotation:"), self.sb_rot)
+            vbox.addLayout(form_rot)
 
-            grp_layout.setLayout(form_layout)
+            grp_layout.setLayout(vbox)
             self.layout_layout.addWidget(grp_layout)
 
-            # Boundaries Group
+            # Connect state machine
+            self.radio_preset.toggled.connect(self._on_alignment_mode_changed)
+            self.btn_pick.clicked.connect(self.onPickOrigin)
+            self.btn_match_wp.clicked.connect(self.onMatchWP)
+
+            # Boundaries group
             grp_bound = QtGui.QGroupBox(translate("Arch", "Boundaries"))
             form_bound = QtGui.QFormLayout()
 
@@ -995,8 +1015,14 @@ if FreeCAD.GuiUp:
             self.combo_mode.setCurrentText(mode)
             self.onModeChanged(self.combo_mode.currentIndex())
 
-            # Numerical values are auto-loaded by ExpressionBinding
-            self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
+            # Initialize radio button state based on the current alignment mode
+            is_custom = self.template.buffer.TileAlignment == "Custom"
+            self.radio_custom.setChecked(is_custom)
+            self.radio_preset.setChecked(not is_custom)
+
+            if not is_custom:
+                self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
+            self._on_alignment_mode_changed(not is_custom)
 
             if self.template.buffer.AlignmentOffset:
                 self.sb_u_off.setValue(self.template.buffer.AlignmentOffset.x)
@@ -1170,6 +1196,196 @@ if FreeCAD.GuiUp:
             # Update UI label
             self._updateSelectionUI()
 
+        def _on_alignment_mode_changed(self, is_preset):
+            """Updates widget enabled states based on the active radio branch."""
+            self.combo_align.setEnabled(is_preset)
+            self.btn_pick.setEnabled(not is_preset)
+            self.btn_match_wp.setEnabled(not is_preset)
+            self.sb_u_off.setEnabled(not is_preset)
+            self.sb_v_off.setEnabled(not is_preset)
+
+            # Clear the manual offsets when switching to Preset mode to prevent
+            # them from being invisibly added to the standard alignment logic.
+            if is_preset:
+                self.sb_u_off.setValue(0.0)
+                self.sb_v_off.setValue(0.0)
+
+        def onMatchWP(self):
+            """Snapshots the current working plane into the covering properties."""
+            import WorkingPlane
+            import DraftGeomUtils
+            import DraftVecUtils
+            import math
+
+            # Resolve target geometry from the live object or selection.
+            ref = (
+                self.obj_to_edit.Base
+                if self.obj_to_edit
+                else (self.selection_list[0] if self.selection_list else None)
+            )
+            base_face = Arch.getFaceGeometry(ref)
+            if not base_face:
+                return
+
+            wp = WorkingPlane.get_working_plane()
+            u_basis, v_basis, normal, center = self.template.buffer.Proxy._get_layout_frame(
+                base_face
+            )
+
+            # Determine rotation angle between the working plane U axis and the face local frame.
+            wp_u_proj = wp.u - normal * wp.u.dot(normal)
+            if wp_u_proj.Length > 1e-7:
+                angle = DraftVecUtils.angle(u_basis, wp_u_proj, normal)
+                self.sb_rot.setProperty("rawValue", math.degrees(angle))
+
+            # Project the working plane origin onto the face to determine the offset.
+            pt_on_face = DraftGeomUtils.project_point_on_plane(wp.position, center, normal)
+            delta = pt_on_face - center
+            u_off = delta.dot(u_basis)
+            v_off = delta.dot(v_basis)
+
+            self.template.buffer.AlignmentOffset = FreeCAD.Vector(u_off, v_off, 0)
+            self.sb_u_off.setValue(u_off)
+            self.sb_v_off.setValue(v_off)
+            self.radio_custom.setChecked(True)
+
+        def onPickOrigin(self, state):
+            """Initializes or terminates the interactive snapper loop."""
+            if state:
+                # Resolve basis once for the duration of the pick to ensure performance and safety.
+                ref = (
+                    self.obj_to_edit.Base
+                    if self.obj_to_edit
+                    else (self.selection_list[0] if self.selection_list else None)
+                )
+                base_face = Arch.getFaceGeometry(ref)
+                if not base_face:
+                    FreeCAD.Console.PrintError(
+                        translate("Arch", "Could not resolve base geometry.") + "\n"
+                    )
+                    self.btn_pick.setChecked(False)
+                    return
+
+                self._cached_basis = self.template.buffer.Proxy._get_layout_frame(base_face)
+
+                # Setup the lead-tile box tracker.
+                import draftguitools.gui_trackers as trackers
+
+                self.tracker = trackers.boxTracker()
+                self.tracker.length(self.template.buffer.TileLength.Value)
+                self.tracker.width(self.template.buffer.TileWidth.Value)
+                self.tracker.height(self.template.buffer.TileThickness.Value)
+                self.tracker.on()
+
+                # Start the interaction loop using a view callback to keep the task panel active.
+                self._view = FreeCADGui.ActiveDocument.ActiveView
+                self._callback_id = self._view.addEventCallback("SoEvent", self._handle_interaction)
+
+                # Lock UI and enter a ghost mode for clear 3D context
+                self.geo_widget.setEnabled(False)
+                self.vis_widget.setEnabled(False)
+                if self.obj_to_edit:
+                    self._old_transparency = self.obj_to_edit.ViewObject.Transparency
+                    self._old_selectable = self.obj_to_edit.ViewObject.Selectable
+                    self.obj_to_edit.ViewObject.Transparency = 70
+                    self.obj_to_edit.ViewObject.Selectable = False
+
+                # Wake up the Draft Snapper visuals (Grid and Snap Markers)
+                FreeCAD.activeDraftCommand = self
+                if hasattr(FreeCADGui, "Snapper"):
+                    FreeCADGui.Snapper.show()
+                    FreeCADGui.Snapper.setTrackers()
+            else:
+                self._cleanup_snapper()
+
+        def _handle_interaction(self, arg):
+            """Processes low-level events for snapping and picking."""
+            # Handle movement to update the snapping position and visual tracker.
+            if arg["Type"] == "SoLocation2Event":
+                ctrl = arg["CtrlDown"]
+                shift = arg["ShiftDown"]
+                # Invoke the snapper manually to allow standard keyboard modifiers.
+                self.pt = FreeCADGui.Snapper.snap(arg["Position"], active=ctrl, constrain=shift)
+                self.onMouseMove(self.pt, None)
+
+            # Handle click to confirm the origin point.
+            elif (
+                arg["Type"] == "SoMouseButtonEvent"
+                and arg["State"] == "DOWN"
+                and arg["Button"] == "BUTTON1"
+            ):
+                # Disconnect immediately to prevent re-entrancy during processing.
+                if hasattr(self, "_callback_id") and hasattr(self, "_view"):
+                    self._view.removeEventCallback("SoEvent", self._callback_id)
+                    del self._callback_id
+
+                # Delay the finalization to ensure the Coin3D event traversal has finished.
+                from draftutils.todo import ToDo
+
+                ToDo.delay(self.onPointPicked, self.pt)
+
+            # Handle escape to cancel the operation.
+            elif arg["Type"] == "SoKeyboardEvent" and arg["Key"] == "ESCAPE":
+                from draftutils.todo import ToDo
+
+                ToDo.delay(self._cleanup_snapper, None)
+
+        def onMouseMove(self, point, info):
+            """Updates the lead-tile tracker following the cursor."""
+            if point and hasattr(self, "tracker") and hasattr(self, "_cached_basis"):
+                u_basis, v_basis, normal, _ = self._cached_basis
+                l, w, t = (
+                    self.template.buffer.TileLength.Value,
+                    self.template.buffer.TileWidth.Value,
+                    self.template.buffer.TileThickness.Value,
+                )
+
+                # Apply an offset so the cursor tracks the bottom-left corner of the box.
+                delta = (u_basis * (l / 2.0)) + (v_basis * (w / 2.0)) + (normal * (t / 2.0))
+                self.tracker.pos(point + delta)
+                self.tracker.setRotation(FreeCAD.Rotation(u_basis, v_basis, normal, "XYZ"))
+
+        def onPointPicked(self, point, obj=None):
+            """Calculates the final alignment offset and restores the interface."""
+            if point and hasattr(self, "_cached_basis"):
+                u_basis, v_basis, _, center = self._cached_basis
+                delta = point - center
+                self.template.buffer.AlignmentOffset = FreeCAD.Vector(
+                    delta.dot(u_basis), delta.dot(v_basis), 0
+                )
+                self.sb_u_off.setValue(delta.dot(u_basis))
+                self.sb_v_off.setValue(delta.dot(v_basis))
+                self.radio_custom.setChecked(True)
+
+            self._cleanup_snapper()
+
+        def _cleanup_snapper(self, arg=None):
+            """Terminates the interaction loop and destroys trackers safely."""
+            self.btn_pick.setChecked(False)
+
+            # Clean up the event callback if it has not already been removed by a click.
+            if hasattr(self, "_callback_id"):
+                if hasattr(self, "_view"):
+                    self._view.removeEventCallback("SoEvent", self._callback_id)
+                del self._callback_id
+
+            if hasattr(self, "tracker"):
+                self.tracker.finalize()
+                del self.tracker
+            if hasattr(self, "_cached_basis"):
+                del self._cached_basis
+
+            # Restore the UI and object state.
+            self.geo_widget.setEnabled(True)
+            self.vis_widget.setEnabled(True)
+            if self.obj_to_edit:
+                if hasattr(self, "_old_transparency"):
+                    self.obj_to_edit.ViewObject.Transparency = self._old_transparency
+                    self.obj_to_edit.ViewObject.Selectable = self._old_selectable
+
+            FreeCAD.activeDraftCommand = None
+            FreeCADGui.Snapper.off()
+
         def updateBase(self):
             # Update the Base property of the live object
             if self.obj_to_edit:
@@ -1238,7 +1454,12 @@ if FreeCAD.GuiUp:
 
             # Sync enum properties
             obj.FinishMode = self.combo_mode.currentText()
-            obj.TileAlignment = self.combo_align.currentText()
+            if self.radio_custom.isChecked():
+                obj.TileAlignment = "Custom"
+            else:
+                obj.TileAlignment = self.combo_align.currentText()
+
+            obj.AlignmentOffset = FreeCAD.Vector(self.sb_u_off.value(), self.sb_v_off.value(), 0.0)
 
             # Sync file paths
             if obj.FinishMode == "Hatch Pattern":
@@ -1254,8 +1475,6 @@ if FreeCAD.GuiUp:
                 obj.PerimeterJointType = self.combo_perim.currentText()
                 obj.PerimeterJointWidth = self.sb_perim_custom.property("rawValue")
                 obj.BorderSetback = self.sb_setback.property("rawValue")
-
-            obj.AlignmentOffset = FreeCAD.Vector(self.sb_u_off.value(), self.sb_v_off.value(), 0.0)
 
         def accept(self):
             """
@@ -1429,7 +1648,13 @@ class _CoveringTemplate:
 
     def destroy(self):
         """Safely removes the buffer from the document."""
-        doc = self.buffer.Document
-        if doc and doc.getObject(self.buffer.Name):
-            doc.removeObject(self.buffer.Name)
-        self.buffer = None
+        try:
+            if self.buffer:
+                doc = self.buffer.Document
+                if doc and doc.getObject(self.buffer.Name):
+                    doc.removeObject(self.buffer.Name)
+        except (ReferenceError, RuntimeError):
+            # Object might already be deleted by a transaction rollback
+            pass
+        finally:
+            self.buffer = None

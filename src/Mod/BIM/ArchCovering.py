@@ -13,7 +13,6 @@ solid 3D tiles, parametric 2D patterns, and hatch patterns.
 """
 
 import FreeCAD
-import Part
 import ArchComponent
 import Arch
 import ArchTessellation
@@ -136,7 +135,7 @@ class _Covering(ArchComponent.Component):
                 "TileAlignment",
                 "Covering",
                 "The alignment of the tile grid",
-                ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight"],
+                ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight", "Custom"],
             ),
             ("App::PropertyAngle", "Rotation", "Covering", "Rotation of the finish", 0),
             ("App::PropertyLength", "TileLength", "Tiles", "The length of the tiles", 0),
@@ -378,7 +377,11 @@ class _Covering(ArchComponent.Component):
         return effective_face
 
     def _calculate_origin(self, effective_face, center, u_vec, v_vec, obj):
-        import Arch
+
+        # In Custom mode, the AlignmentOffset is treated as an absolute
+        # coordinate relative to the face center.
+        if obj.TileAlignment == "Custom":
+            return center + u_vec * obj.AlignmentOffset.x + v_vec * obj.AlignmentOffset.y
 
         origin_3d = Arch.getFaceGridOrigin(
             effective_face, center, u_vec, v_vec, obj.TileAlignment, obj.AlignmentOffset
