@@ -675,13 +675,20 @@ if FreeCAD.GuiUp:
                         text = translate("Arch", "No selection")
 
                 self.le_selection.setText(text)
-                self.le_selection.setToolTip(text)
+                tooltip = (
+                    translate("Arch", "The object or face this covering is applied to:")
+                    + "\n"
+                    + text
+                )
+                self.le_selection.setToolTip(tooltip)
                 return
 
             # Creation mode (batch target list)
             if not self.selection_list:
                 self.le_selection.setText(translate("Arch", "No selection"))
-                self.le_selection.setToolTip(translate("Arch", "The selected object or face"))
+                self.le_selection.setToolTip(
+                    translate("Arch", "The object or face this covering is applied to")
+                )
                 return
 
             # Analyze list to determine appropriate label
@@ -719,7 +726,12 @@ if FreeCAD.GuiUp:
                 self.le_selection.setText(translate("Arch", f"{count} objects selected"))
 
             # Show specific elements in the tooltip
-            self.le_selection.setToolTip(", ".join(tooltip_items))
+            tooltip = (
+                translate("Arch", "The object or face this covering is applied to:")
+                + "\n"
+                + ", ".join(tooltip_items)
+            )
+            self.le_selection.setToolTip(tooltip)
 
         def _setupTopControls(self):
             top_form = QtGui.QFormLayout()
@@ -729,12 +741,15 @@ if FreeCAD.GuiUp:
             self.le_selection = QtGui.QLineEdit()
             self.le_selection.setPlaceholderText(translate("Arch", "No selection"))
             self.le_selection.setEnabled(False)
-            self.le_selection.setToolTip(translate("Arch", "The selected object or face"))
+            self.le_selection.setToolTip(
+                translate("Arch", "The object or face this covering is applied to")
+            )
 
             self.btn_selection = QtGui.QPushButton(translate("Arch", "Pick"))
             self.btn_selection.setCheckable(True)
-            self.btn_selection.setToolTip(translate("Arch", "Enable picking in the 3D view"))
-
+            self.btn_selection.setToolTip(
+                translate("Arch", "Enable interactive face selection in the 3D view")
+            )
             # Use the smart label helper to populate initial state
             self._updateSelectionUI()
 
@@ -819,9 +834,20 @@ if FreeCAD.GuiUp:
             # Branch 1: Preset
             h_preset = QtGui.QHBoxLayout()
             self.radio_preset = QtGui.QRadioButton(translate("Arch", "Preset:"))
+            self.radio_preset.setToolTip(
+                translate(
+                    "Arch", "Use standard corner or center alignment relative to the boundary"
+                )
+            )
             self.combo_align = QtGui.QComboBox()
             self.combo_align.addItems(
                 ["Center", "TopLeft", "TopRight", "BottomLeft", "BottomRight"]
+            )
+            self.combo_align.setToolTip(
+                translate(
+                    "Arch",
+                    "Select which part of the usable boundary to anchor the pattern origin to",
+                )
             )
             h_preset.addWidget(self.radio_preset)
             h_preset.addWidget(self.combo_align)
@@ -830,9 +856,26 @@ if FreeCAD.GuiUp:
             # Branch 2: Custom
             h_custom = QtGui.QHBoxLayout()
             self.radio_custom = QtGui.QRadioButton(translate("Arch", "Custom:"))
+            self.radio_custom.setToolTip(
+                translate(
+                    "Arch", "Use a manually picked 3D point or match the current Working Plane"
+                )
+            )
             self.btn_pick = QtGui.QPushButton(translate("Arch", "Pick Origin"))
             self.btn_pick.setCheckable(True)
+            self.btn_pick.setToolTip(
+                translate(
+                    "Arch",
+                    "Enter interactive mode to visually slide the grid origin to a specific 3D point",
+                )
+            )
             self.btn_match_wp = QtGui.QPushButton(translate("Arch", "Match Working Plane"))
+            self.btn_match_wp.setToolTip(
+                translate(
+                    "Arch",
+                    "Use the position and orientation of the active Working Plane for the covering",
+                )
+            )
             h_custom.addWidget(self.radio_custom)
             h_custom.addWidget(self.btn_pick)
             h_custom.addWidget(self.btn_match_wp)
@@ -887,7 +930,14 @@ if FreeCAD.GuiUp:
                 ]
             )
             self.combo_perim.setToolTip(
-                translate("Arch", "Create an expansion joint at the perimeter")
+                translate(
+                    "Arch",
+                    "How to handle the gap at the boundary:\n"
+                    "- None: no joint\n"
+                    "- Half Interior: gap is half the Joint Width\n"
+                    "- Full Interior: gap matches the Joint Width\n"
+                    "- Custom: manual width value",
+                )
             )
             self.combo_perim.currentIndexChanged.connect(self.onPerimeterChanged)
             h_perim.addWidget(self.combo_perim)
@@ -949,6 +999,15 @@ if FreeCAD.GuiUp:
                     translate("Arch", "Custom"),
                 ]
             )
+            self.combo_stagger.setToolTip(
+                translate(
+                    "Arch",
+                    "The horizontal shift applied to every second row:\n"
+                    "- Stacked: all joints align vertically\n"
+                    "- Half/Third/Quarter Bond: shifts by a fraction of the tile length\n"
+                    "- Custom: manual offset value",
+                )
+            )
             self.combo_stagger.currentIndexChanged.connect(self.onStaggerChanged)
             h_stagger.addWidget(self.combo_stagger)
 
@@ -1000,7 +1059,9 @@ if FreeCAD.GuiUp:
         def _setupVisualUI(self):
             visual_form = QtGui.QFormLayout(self.vis_widget)
             self.le_tex_image = QtGui.QLineEdit()
-            self.le_tex_image.setToolTip(translate("Arch", "An image file to map onto each tile"))
+            self.le_tex_image.setToolTip(
+                translate("Arch", "An image file to map onto each tile or substrate")
+            )
             btn_browse = QtGui.QPushButton("...")
             btn_browse.clicked.connect(self.browseTexture)
 
