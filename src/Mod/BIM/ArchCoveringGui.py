@@ -354,10 +354,6 @@ if FreeCAD.GuiUp:
             if not hasattr(vobj, "TextureImage") or not hasattr(vobj, "TextureScale"):
                 return
 
-            # Also check for value validity if needed
-            if not vobj.TextureImage:
-                return
-
             import pivy.coin as coin
             from draftutils import gui_utils
 
@@ -376,18 +372,30 @@ if FreeCAD.GuiUp:
             if not target_node:
                 return
 
-            # Clean up existing texture nodes from FlatRoot
-            for i in range(target_node.getNumChildren() - 1, -1, -1):
+            # State check: identify indices of any existing texture nodes in the scene graph.
+            # We must identify these before deciding whether to return early.
+            found_indices = []
+            for i in range(target_node.getNumChildren()):
                 child = target_node.getChild(i)
                 if isinstance(
                     child,
                     (coin.SoTexture2, coin.SoTextureCoordinatePlane, coin.SoTexture2Transform),
                 ):
-                    target_node.removeChild(i)
+                    found_indices.append(i)
+
+            # Performance guard: If the user has not set a texture and the scene graph is
+            # already clean, exit immediately to avoid unnecessary processing.
+            if not vobj.TextureImage and not found_indices:
+                return
+
+            # Clean up existing texture nodes from FlatRoot.
+            # We process the list in reverse to maintain index stability during removal.
+            for i in reversed(found_indices):
+                target_node.removeChild(i)
 
             self.texture = None
 
-            # Calculate Mapping
+            # If the property was cleared, the scene is now synchronized and we can exit.
             if not vobj.TextureImage or not os.path.exists(vobj.TextureImage):
                 return
 
