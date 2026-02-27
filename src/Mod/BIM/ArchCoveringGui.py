@@ -271,8 +271,18 @@ if FreeCAD.GuiUp:
             if not (prop == "Shape" and isinstance(obj.Base, tuple)):
                 super().updateData(obj, prop)
 
-            # Apply the texture modifications once the scene graph is rebuilt and stable.
-            if prop in ["Shape", "TextureImage", "TextureScale", "Rotation"]:
+            # Update texture mapping when geometry or texture properties change
+            if prop in [
+                "Shape",
+                "TextureImage",
+                "TextureScale",
+                "Rotation",
+                "TileLength",
+                "TileWidth",
+                "JointWidth",
+                "TileAlignment",
+                "AlignmentOffset",
+            ]:
                 self.updateTexture(obj)
 
         def onChanged(self, vobj, prop):
@@ -439,30 +449,101 @@ if FreeCAD.GuiUp:
             """
             Calculates the texture projection vectors and offsets.
 
+            This method derives a localized orthonormal basis and origin point to
+            align a texture bitmap with the physical tile grid.
+
             Parameters
             ----------
             obj : App::FeaturePython
-                The Covering object.
+                The Covering object containing dimensional, alignment, and placement data.
             display_mode : str
-                The current display mode ("Flat Lines", "Shaded", etc.).
+                The current display mode ("Flat Lines", "Shaded", etc.), which determines whether
+                coordinates are resolved in local or global space.
 
             Returns
             -------
             tuple or None
-                (dir_u, dir_v, s_offset, t_offset) where dir_* are FreeCAD.Vectors
-                and *_offset are floats. Returns None if mapping cannot be computed.
+                A tuple containing (dir_u, dir_v, s_offset, t_offset) where dir_* are normalized
+                FreeCAD.Vectors and *_offset are floats representing the normalized texture
+                coordinate shift. Returns None if the geometry basis cannot be resolved.
+
+            Notes
+            -----
+            Texture mapping is performed via linear projection using a period equal to (Tile +
+            Joint). Because standard Coin3D mapping nodes cannot skip the empty space of the joint,
+            the mapping is shifted backwards by half the joint width. This workaround centers the
+            image on the physical tile body, ensuring that any loss of texture due to the joint is
+            distributed symmetrically across the edges.
+
+            .. todo::
+               The coordinate basis resolution and alignment shift logic replicates the code in
+               `ArchCovering.execute`. This should be refactored into a shared helper method to
+               ensure consistence and reduce maintenance overhead.
             """
             vobj = obj.ViewObject
 
-            # Geometry calculation (in Global Space, done once)
+            # Geometry calculation (in global space)
             base_face = Arch.getFaceGeometry(obj.Base)
             if not base_face:
                 return None
 
-            u_vec, v_vec, normal, center_point = Arch.getFaceUV(base_face)
-            origin = Arch.getFaceGridOrigin(
-                base_face, center_point, u_vec, v_vec, obj.TileAlignment, obj.AlignmentOffset
-            )
+            # Replicate the effective face logic from the object to ensure alignment
+            # Texture must start at the same 'inner corner' as the physical tiles
+            effective_face = base_face.copy()
+            joint_width = obj.JointWidth.Value if hasattr(obj, "JointWidth") else 0.0
+            border_setback = obj.BorderSetback.Value
+
+            # We don't need the full Boolean cut logic here, just the perimeter offset
+            # because texture mapping is planar and ignores holes.
+            total_offset = border_setback + joint_width
+            if total_offset > 0:
+                effective_face.makeOffset2D(-total_offset)
+
+            # Replicate the object's frame resolution logic
+            import DraftGeomUtils
+
+            center_point = base_face.BoundBox.Center
+
+            # Normal
+            u_p, v_p = base_face.Surface.parameter(center_point)
+            normal = FreeCAD.Vector(base_face.normalAt(u_p, v_p))
+            normal.normalize()
+
+            # U-Vector (aligned to object X)
+            obj_rot = obj.Placement.Rotation
+            u_ref = obj_rot.multVec(FreeCAD.Vector(1, 0, 0))
+            u_vec = u_ref - normal * u_ref.dot(normal)
+            if u_vec.Length < 1e-7:
+                v_ref = obj_rot.multVec(FreeCAD.Vector(0, 1, 0))
+                u_vec = v_ref - normal * v_ref.dot(normal)
+            u_vec.normalize()
+
+            # V-Vector
+            v_vec = normal.cross(u_vec)
+            v_vec.normalize()
+
+            # Calculate origin
+            if obj.TileAlignment == "Custom":
+                origin = (
+                    center_point + u_vec * obj.AlignmentOffset.x + v_vec * obj.AlignmentOffset.y
+                )
+            else:
+                origin = Arch.getFaceGridOrigin(
+                    effective_face,
+                    center_point,
+                    u_vec,
+                    v_vec,
+                    obj.TileAlignment,
+                    obj.AlignmentOffset,
+                )
+
+                if obj.TileAlignment == "Center":
+                    origin = origin - u_vec * (obj.TileLength.Value / 2.0)
+                    origin = origin - v_vec * (obj.TileWidth.Value / 2.0)
+                elif "Right" in obj.TileAlignment:
+                    origin = origin + u_vec * joint_width
+                elif "Top" in obj.TileAlignment:
+                    origin = origin + v_vec * joint_width
 
             # Apply different logic based on the active DisplayMode
             if display_mode == "Flat Lines":
@@ -495,32 +576,38 @@ if FreeCAD.GuiUp:
             if calc_norm.Length > Part.Precision.approximation():
                 calc_norm.normalize()
 
-            # Apply Texture Rotation
+            # Apply texture rotation
             if hasattr(obj, "Rotation") and obj.Rotation.Value != 0:
                 rot = FreeCAD.Rotation(calc_norm, obj.Rotation.Value)
                 calc_u = rot.multVec(calc_u)
                 calc_v = rot.multVec(calc_v)
 
-            # Apply Texture Scaling
+            # Apply texture scaling
             scale_u = vobj.TextureScale.x if vobj.TextureScale.x != 0 else 1.0
             scale_v = vobj.TextureScale.y if vobj.TextureScale.y != 0 else 1.0
 
-            # Calculate Period (Tile + Joint)
-            period_u = (obj.TileLength.Value + obj.JointWidth.Value) * scale_u
-            period_v = (obj.TileWidth.Value + obj.JointWidth.Value) * scale_v
+            # Calculate period (tile + joint)
+            period_u = (obj.TileLength.Value + joint_width) * scale_u
+            period_v = (obj.TileWidth.Value + joint_width) * scale_v
 
             if period_u == 0:
                 period_u = 1000.0
             if period_v == 0:
                 period_v = 1000.0
 
-            # Calculate Final Directions
+            # Calculate final directions
             dir_u = calc_u.multiply(1.0 / period_u)
             dir_v = calc_v.multiply(1.0 / period_v)
 
-            # Calculate Offsets
+            # Calculate offsets
             s_offset = calc_origin.dot(dir_u)
             t_offset = calc_origin.dot(dir_v)
+
+            # Center the texture on the tile body
+            # Subtract half the joint width to pull the image back to the visual center
+            if hasattr(obj, "JointWidth"):
+                s_offset -= (obj.JointWidth.Value / 2.0) * scale_u / period_u  # Normalized
+                t_offset -= (obj.JointWidth.Value / 2.0) * scale_v / period_v
 
             return dir_u, dir_v, s_offset, t_offset
 
