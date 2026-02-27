@@ -366,7 +366,21 @@ class _Covering(ArchComponent.Component):
         return effective_face
 
     def _calculate_origin(self, effective_face, center, u_vec, v_vec, obj):
+        """
+        Calculates the 3D origin for the pattern grid, applying semantic alignment shifts.
 
+        The grid origin defines the anchor point (0,0) for the first material unit (tile,
+        board, or pattern repetition). The behavior varies based on the TileAlignment property:
+
+        - 'Center': The grid is shifted by half a tile unit (Length/2, Width/2). This
+          ensures that the center of a tile is perfectly aligned with the center of the
+          boundary, rather than a grout intersection.
+        - Corner Presets (e.g., 'BottomLeft', 'TopRight'): The origin is anchored
+          strictly to the boundary corner. The (0,0) tile vertex coincides exactly with
+           the boundary vertex. There are no grout-padding shifts.
+        - 'Custom': Boundary-based semantic logic is bypassed. The AlignmentOffset
+          property is treated as an absolute local coordinate relative to the face center.
+        """
         # In Custom mode, the AlignmentOffset is treated as an absolute
         # coordinate relative to the face center.
         if obj.TileAlignment == "Custom":
@@ -379,11 +393,7 @@ class _Covering(ArchComponent.Component):
         if obj.TileAlignment == "Center":
             origin_3d = origin_3d - u_vec * (obj.TileLength.Value / 2.0)
             origin_3d = origin_3d - v_vec * (obj.TileWidth.Value / 2.0)
-        else:
-            if "Right" in obj.TileAlignment:
-                origin_3d = origin_3d + u_vec * obj.JointWidth.Value
-            if "Top" in obj.TileAlignment:
-                origin_3d = origin_3d + v_vec * obj.JointWidth.Value
+
         return origin_3d
 
     def execute(self, obj):
@@ -393,11 +403,15 @@ class _Covering(ArchComponent.Component):
         """
         import Part
 
+        def log(msg):
+            FreeCAD.Console.PrintMessage(f"COVERING [{obj.Label}]: {msg}\n")
+
         if self.clone(obj):
             return
 
         base_face = Arch.getFaceGeometry(obj.Base)
         if not base_face:
+            log("No base face found. Aborting.")
             return
 
         # Establish a stable coordinate system based on the global axes.
@@ -433,6 +447,12 @@ class _Covering(ArchComponent.Component):
             u_vec,
             normal,
         )
+
+        # -- INSTRUMENTATION: Print final state before assignment --
+        log(f"Final Effective Face BB (World): {effective_face.BoundBox}")
+        log(f"Final Origin_3D (World): {origin_3d}")
+        log(f"Engine Placement Return: {res.placement}")
+        log(f"Engine Geometry BB (Local): {res.geometry.BoundBox if res.geometry else 'None'}")
 
         # Update the UI with any status messages from the engine.
         match res.status:

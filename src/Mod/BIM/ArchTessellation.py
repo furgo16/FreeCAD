@@ -184,8 +184,8 @@ class RectangularTessellator(Tessellator):
             quantities.count_full = 1
             quantities.area_gross = quantities.area_net
 
-            if self.extrude and self.thickness > 0:
-                final_geo = substrate.extrude(normal * self.thickness)
+            if self.extrude and self.thickness > 0.001:
+                final_geo = substrate.extrude(FreeCAD.Vector(0, 0, self.thickness))
             else:
                 # 2D representation with micro-offset for visibility
                 mat = FreeCAD.Matrix()
@@ -226,7 +226,7 @@ class RectangularTessellator(Tessellator):
         # Calculate Net Area, Perimeter, and Total Joint Length.
         # Uses geometric intersection for standard modes, or statistical estimation for extreme
         # modes.
-        quantities = self._calculate_linear_quantities(substrate, params, h_edges, v_edges, tr)
+        quantities = self._calculate_linear_quantities(substrate, params, h_edges, v_edges)
 
         # Geometry generation strategy
         # Branch based on the calculated performance status.
@@ -234,14 +234,12 @@ class RectangularTessellator(Tessellator):
             # Analytical path:
             # Used for tiny joints (where booleans fail) or massive counts (where booleans freeze).
             # Returns a monolithic solid with mathematically derived counts.
-            final_geo = self._generate_analytical_geo(
-                substrate, normal, params, final_cl, quantities
-            )
+            final_geo = self._generate_analytical_geo(substrate, params, final_cl, quantities)
         else:
             # Physical path:
             # Standard mode. Generates "cutter" volumes and performs boolean subtraction.
             # Counts are derived by measuring the resulting solids/faces.
-            final_geo = self._generate_physical_geo(substrate, normal, tr, params, quantities)
+            final_geo = self._generate_physical_geo(substrate, params, quantities)
 
         # Result assembly
         return TessellationResult(
@@ -308,7 +306,7 @@ class RectangularTessellator(Tessellator):
         }
 
     def _generate_lines_along_axis(
-        self, count, step, ortho_dim, line_start, line_len, is_horizontal, placement, bbox
+        self, count, step, ortho_dim, line_start, line_len, is_horizontal, bbox
     ):
         """
         Generates a list of parallel edges for the grid visualization.
@@ -327,10 +325,8 @@ class RectangularTessellator(Tessellator):
             The total length of the line.
         is_horizontal : bool
             If True, generates horizontal lines (Y-varying). If False, vertical (X-varying).
-        placement : FreeCAD.Placement
-            The global placement of the grid.
         bbox : FreeCAD.BoundBox
-            The global bounding box of the substrate.
+            The local bounding box of the substrate (after localization).
 
         Returns
         -------
@@ -350,11 +346,12 @@ class RectangularTessellator(Tessellator):
                 p1 = FreeCAD.Vector(pos, line_start, 0)
                 p2 = FreeCAD.Vector(pos, line_start + line_len, 0)
 
-            # Performance: Bounding Box pre-filter to avoid processing lines in "air"
-            p1_g, p2_g = placement.multVec(p1), placement.multVec(p2)
+            # Performance: Bounding Box pre-filter to avoid processing lines in "air".
+            # Both p1/p2 and bbox are in the same local coordinate frame (substrate already
+            # localized), so compare directly without applying the global placement.
             edge_bb = FreeCAD.BoundBox()
-            edge_bb.add(p1_g)
-            edge_bb.add(p2_g)
+            edge_bb.add(p1)
+            edge_bb.add(p2)
             if bbox.intersect(edge_bb):
                 edges.append(Part.makeLine(p1, p2))
 
@@ -373,7 +370,7 @@ class RectangularTessellator(Tessellator):
         params : dict
             The grid parameters calculated by _calculate_grid_params.
         bbox : FreeCAD.BoundBox
-            The global bounding box of the substrate.
+            The local bounding box of the substrate (after localization).
 
         Returns
         -------
@@ -399,7 +396,6 @@ class RectangularTessellator(Tessellator):
                 params["start_u"],
                 params["full_len_u"],
                 True,
-                tr,
                 bbox,
             )
             # Vertical lines (vary along U axis)
@@ -410,7 +406,6 @@ class RectangularTessellator(Tessellator):
                 params["start_v"],
                 params["full_len_v"],
                 False,
-                tr,
                 bbox,
             )
 
@@ -419,7 +414,7 @@ class RectangularTessellator(Tessellator):
 
         return tr, h_edges, v_edges, final_cl
 
-    def _calculate_linear_quantities(self, substrate, params, h_edges, v_edges, placement):
+    def _calculate_linear_quantities(self, substrate, params, h_edges, v_edges):
         """
         Calculates areas, perimeter, and joint lengths.
 
@@ -430,9 +425,7 @@ class RectangularTessellator(Tessellator):
         params : dict
             Grid parameters.
         h_edges, v_edges : list
-            Lists of grid edges.
-        placement : FreeCAD.Placement
-            The local coordinate placement.
+            Lists of grid edges in local coordinates.
 
         Returns
         -------
@@ -443,7 +436,9 @@ class RectangularTessellator(Tessellator):
         quantities.area_net = substrate.Area
         quantities.length_perimeter = substrate.Length
 
-        # Calculate joint length via clipping centerlines
+        # Calculate joint length via clipping centerlines.
+        # Both substrate and the edge compounds are in the same local coordinate frame
+        # (origin at grid anchor, Z=0), so no Placement assignment is needed before common().
         if h_edges or v_edges:
             try:
                 # Use a hybrid approach to calculate joint length. Intersect horizontal and vertical
@@ -452,12 +447,10 @@ class RectangularTessellator(Tessellator):
                 total_length = 0
                 if h_edges:
                     h_compound = Part.Compound(h_edges)
-                    h_compound.Placement = placement
                     clipped_h = substrate.common(h_compound)
                     total_length += clipped_h.Length
                 if v_edges:
                     v_compound = Part.Compound(v_edges)
-                    v_compound.Placement = placement
                     clipped_v = substrate.common(v_compound)
                     total_length += clipped_v.Length
                 quantities.length_joints = total_length
@@ -471,7 +464,7 @@ class RectangularTessellator(Tessellator):
 
         return quantities
 
-    def _generate_analytical_geo(self, substrate, normal, params, final_cl, quantities):
+    def _generate_analytical_geo(self, substrate, params, final_cl, quantities):
         """
         Generates a monolithic representation of the tiled surface and calculates quantities
         mathematically.
@@ -487,8 +480,6 @@ class RectangularTessellator(Tessellator):
         ----------
         substrate : Part.Face
             The base face.
-        normal : FreeCAD.Vector
-            The extrusion direction.
         params : dict
             Grid parameters.
         final_cl : Part.Compound
@@ -510,11 +501,15 @@ class RectangularTessellator(Tessellator):
         ]
         quantities.waste_area = max(0.0, quantities.area_gross - quantities.area_net)
 
-        if self.extrude:
-            monolithic = substrate.extrude(normal * self.thickness)
+        local_normal = FreeCAD.Vector(0, 0, 1)
+
+        # Ensure we do not pass a null vector to the extrusion engine.
+        if self.extrude and abs(self.thickness) > 1e-6:
+            monolithic = substrate.extrude(local_normal * self.thickness)
         else:
+            # 2D fallback: apply micro-offset to prevent Z-fighting in the viewport.
             mat = FreeCAD.Matrix()
-            mat.move(normal.normalize() * 0.05)
+            mat.move(local_normal * 0.05)
             monolithic = substrate.transformGeometry(mat)
 
         final_geo = monolithic
@@ -523,7 +518,7 @@ class RectangularTessellator(Tessellator):
 
         return final_geo
 
-    def _generate_physical_geo(self, substrate, normal, placement, params, quantities):
+    def _generate_physical_geo(self, substrate, params, quantities):
         """
         Generates the discrete tile geometry by intersecting a grid of tiles with the substrate.
 
@@ -537,14 +532,14 @@ class RectangularTessellator(Tessellator):
         2. Geometric counting, where "Full" vs "Partial" tiles are determined by measuring the
            volume/area of the resulting fragments against the theoretical unit size.
 
+        Both the substrate and the tile grid are kept in the same local coordinate frame
+        (grid anchor at origin, Z=0 plane) throughout. No Placement is assigned to the tile
+        grid before the boolean intersection.
+
         Parameters
         ----------
         substrate : Part.Face
-            The base face defining the boundary of the covering.
-        normal : FreeCAD.Vector
-            The extrusion direction for 3D tiles.
-        placement : FreeCAD.Placement
-            The grid placement defining origin and orientation.
+            The base face defining the boundary of the covering, already localized to origin.
         params : dict
             Grid parameters including tile dimensions and counts.
         quantities : TessellationQuantities
@@ -562,7 +557,9 @@ class RectangularTessellator(Tessellator):
         unit_area = params["unit_area"]
         unit_volume = params["unit_volume"]
 
-        # Build the grid of tiles at local origin
+        # Build the grid of tiles at local origin.
+        # Tile positions are expressed in the same local frame as the substrate:
+        # U along X, V along Y, extrusion along Z.
         for j in range(-params["count_v"], params["count_v"]):
             # Calculate row-based stagger offsets
             stagger_x = self.offset_u if (j % 2 != 0) else 0.0
@@ -582,14 +579,16 @@ class RectangularTessellator(Tessellator):
                     tile = Part.makePlane(self.length, self.width, FreeCAD.Vector(u_pos, v_pos, 0))
                 tiles.append(tile)
 
-        # Combine and place
+        # Combine. No Placement is set on tile_grid: it stays in the same local frame
+        # as the substrate so that common() operates on consistent coordinates.
         tile_grid = Part.makeCompound(tiles)
-        tile_grid.Placement = placement
+
+        local_normal = FreeCAD.Vector(0, 0, 1)
 
         # Boundary clipping
-        if self.extrude and self.thickness > 0:
+        if self.extrude and self.thickness > 0.001:
             # For solid mode, intersect the tiles with the substrate volume
-            substrate_vol = substrate.extrude(normal * self.thickness)
+            substrate_vol = substrate.extrude(local_normal * self.thickness)
             # Use common() to keep only the parts of tiles inside the substrate
             final_geo = substrate_vol.common(tile_grid)
 
@@ -622,13 +621,13 @@ class RectangularTessellator(Tessellator):
 
                 if self.thickness > 0:
                     # Create a monolithic solid body for realism at no performance cost
-                    body = substrate.extrude(normal * self.thickness)
+                    body = substrate.extrude(local_normal * self.thickness)
                     # Move lines to the top of the solid
                     # Apply micro-offset to prevent Z-fighting with the body/base face
-                    pattern_lines.translate(normal.normalize() * (self.thickness + 0.05))
+                    pattern_lines.translate(local_normal * (self.thickness + 0.05))
                     final_geo = Part.makeCompound([body, pattern_lines])
                 else:
-                    pattern_lines.translate(normal.normalize() * 0.05)
+                    pattern_lines.translate(local_normal * 0.05)
                     final_geo = Part.makeCompound([substrate, pattern_lines])
             else:
                 final_geo = Part.Shape()
@@ -654,19 +653,31 @@ class HatchTessellator(Tessellator):
 
     def compute(self, substrate_3d, origin_3d, u_vec, normal):
         import TechDraw
-        import Part
         import os
 
+        # Establish strict orthonormal basis for the local coordinate system
         n_vec = FreeCAD.Vector(normal).normalize()
         u_vec = FreeCAD.Vector(u_vec).normalize()
         v_vec = n_vec.cross(u_vec).normalize()
         u_vec = v_vec.cross(n_vec).normalize()
 
+        # Derive placement matrix and localization transform
         placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
         to_local = placement.inverse().toMatrix()
 
+        # Localize substrate to the origin
         substrate = substrate_3d.copy()
         substrate.transformShape(to_local)
+
+        # TechDraw requires a Part.Face instance. We extract it once here
+        # so it is available for both the hatching logic and the fallback paths.
+        if hasattr(substrate, "Faces") and len(substrate.Faces) > 0:
+            local_face = substrate.Faces[0]
+        else:
+            local_face = substrate
+
+        # Initialize the result geometry to the localized substrate.
+        final_local_geo = substrate
 
         # Safety fallback: auto-detect pattern name if missing.
         # Passing an empty name string to TechDraw.makeGeomHatch freezes FreeCAD.
@@ -685,29 +696,10 @@ class HatchTessellator(Tessellator):
                     f"ArchTessellation: Could not read pattern file: {e}\n"
                 )
 
-        final_geo = substrate
-
         # Only proceed if we have both a file and a valid name
         if self.filename and self.name:
+            pat_shape = None
             try:
-                # Establish strict orthonormal basis
-                n_vec = FreeCAD.Vector(normal).normalize()
-                u_vec = FreeCAD.Vector(u_vec).normalize()
-                v_vec = n_vec.cross(u_vec).normalize()
-                u_vec = v_vec.cross(n_vec).normalize()
-
-                placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
-                to_local = placement.inverse().toMatrix()
-
-                # Localize geometry
-                local_face = substrate_3d.copy()
-                local_face.transformShape(to_local)
-
-                # TechDraw requires a Part.Face instance, but Boolean operations and transforms
-                # return generic Part.Shapes.
-                if hasattr(local_face, "Faces") and len(local_face.Faces) > 0:
-                    local_face = local_face.Faces[0]
-
                 # Apply pattern rotation
                 if self.rotation:
                     local_face.rotate(
@@ -725,7 +717,6 @@ class HatchTessellator(Tessellator):
                 )
                 param_grp.SetBool("allowCrazyEdge", True)
 
-                pat_shape = None
                 try:
                     pat_shape = TechDraw.makeGeomHatch(
                         local_face, float(self.scale), str(self.name), str(self.filename)
@@ -750,15 +741,19 @@ class HatchTessellator(Tessellator):
 
                 # Ensure the covering has thickness even if the hatch lines fail.
                 if self.thickness > 0:
-                    body = substrate.extrude(normal * self.thickness)
+                    body = substrate.extrude(FreeCAD.Vector(0, 0, self.thickness))
                     if pat_shape and len(pat_shape.Edges) > 0:
-                        pat_shape.translate(normal.normalize() * (self.thickness + 0.05))
+                        # Offset lines slightly to prevent Z-fighting with the top face
+                        pat_shape.translate(FreeCAD.Vector(0, 0, self.thickness + 0.05))
                         final_local_geo = Part.Compound([body, pat_shape])
                     else:
                         final_local_geo = body
                 elif pat_shape and len(pat_shape.Edges) > 0:
-                    pat_shape.translate(normal.normalize() * 0.05)
+                    # Applied micro-offset to prevent Z-fighting with the base face
+                    pat_shape.translate(FreeCAD.Vector(0, 0, 0.05))
                     final_local_geo = Part.Compound([substrate, pat_shape])
+                else:
+                    final_local_geo = local_face
 
             except Exception as e:
                 FreeCAD.Console.PrintError(f"ArchTessellation error: {e}\n")
