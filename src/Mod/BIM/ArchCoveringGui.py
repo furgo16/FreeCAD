@@ -415,9 +415,7 @@ if FreeCAD.GuiUp:
             else:
                 texture_node.filename = vobj.TextureImage
 
-            # Use REPLACE for Shaded mode to override the default material
-            if vobj.DisplayMode == "Shaded":
-                texture_node.model = coin.SoTexture2.REPLACE
+            texture_node.model = coin.SoTexture2.REPLACE
 
             texcoords = coin.SoTextureCoordinatePlane()
             texcoords.directionS.setValue(coin.SbVec3f(dir_u.x, dir_u.y, dir_u.z))
