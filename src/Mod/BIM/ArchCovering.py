@@ -292,42 +292,46 @@ class _Covering(ArchComponent.Component):
 
     def _get_layout_frame(self, face):
         """
-        Returns a right-handed orthonormal basis derived from the face surface.
-        The basis is normalized to ensure tangents point in positive global
-        directions, providing a predictable origin for semantic alignments like
-        'BottomLeft'.
+        Returns a stable, right-handed orthonormal basis for the face.
+
+        The stabilisation of the raw surface tangents (dominant-axis alignment, sign normalisation,
+        re-orthonormalisation) is handled inside ``Arch.getFaceUV``. The only caller-side
+        adjustment needed here is the orientation flip: ``face.Orientation == "Reversed"`` is a
+        topological property of how this face sits within its parent solid, not a property of the
+        surface geometry, so it must be handled here rather than inside the geometry utility.
         """
         u_vec, v_vec, normal, center = Arch.getFaceUV(face)
 
-        # We align the surface normal with the topological orientation of the
-        # face. If the face is reversed (common in solid sub-elements), we
-        # negate the normal to ensure the basis points out from the material.
+        # If the face is reversed (common in solid sub-elements), negate the
+        # normal so the basis points outward from the material surface.
         if face.Orientation == "Reversed":
             normal = -normal
-
-        # We force the tangents into positive global directions. This ensures
-        # that local coordinate calculations for grid alignment consistently
-        # map to the physical orientation of the object in world space.
-        for vec in [u_vec, v_vec]:
-            vals = [abs(vec.x), abs(vec.y), abs(vec.z)]
-            max_val = max(vals)
-            if max_val > 0.1:
-                if vec[vals.index(max_val)] < 0:
-                    vec.multiply(-1)
-
-        # Ensure strict orthogonality and right-handedness (U x V = N).
-        u_vec.normalize()
-        v_vec = normal.cross(u_vec).normalize()
-        u_vec = v_vec.cross(normal).normalize()
+            v_vec = normal.cross(u_vec).normalize()
+            u_vec = v_vec.cross(normal).normalize()
 
         return u_vec, v_vec, normal, center
 
     def _apply_boundaries(self, base_face, obj):
+        """
+        Returns the effective tiling face after applying the BorderSetback offset.
+
+        Design intent
+        -------------
+        BorderSetback shrinks the **outer perimeter** of the face inward by the specified distance.
+        Inner wires (holes such as drain cutouts or column penetrations) are intentionally left at
+        their original size and position. The setback models a finishing margin at the room boundary
+        — for example, keeping tiles away from skirting boards — not a clearance around all
+        obstacles. Expanding holes by the setback distance would be a separate feature, not a
+        natural extension of this property.
+
+        Complexity note
+        ---------------
+        A simple ``Part.makeFace()`` cannot be used here because it crashes when the shrunken outer
+        boundary crosses an existing inner hole. Instead the function shrinks the outer wire, then
+        re-cuts each original inner hole via boolean subtraction.
+        """
         import Part
 
-        # This function is probably more complex than it should be. But if we want to support
-        # boundary offsets on faces with holes, we cannot use Part.makeFace() because it crashes
-        # if the boundary edges cross an inner hole.
         effective_face = base_face.copy()
         border_setback = obj.BorderSetback.Value
 
@@ -403,15 +407,11 @@ class _Covering(ArchComponent.Component):
         """
         import Part
 
-        def log(msg):
-            FreeCAD.Console.PrintMessage(f"COVERING [{obj.Label}]: {msg}\n")
-
         if self.clone(obj):
             return
 
         base_face = Arch.getFaceGeometry(obj.Base)
         if not base_face:
-            log("No base face found. Aborting.")
             return
 
         # Establish a stable coordinate system based on the global axes.
@@ -453,13 +453,13 @@ class _Covering(ArchComponent.Component):
             normal,
         )
 
-        # -- INSTRUMENTATION: Print final state before assignment --
-        log(f"Final Effective Face BB (World): {effective_face.BoundBox}")
-        log(f"Final Origin_3D (World): {origin_3d}")
-        log(f"Engine Placement Return: {res.placement}")
-        log(f"Engine Geometry BB (Local): {res.geometry.BoundBox if res.geometry else 'None'}")
-
         # Update the UI with any status messages from the engine.
+        #
+        # INVALID_DIMENSIONS is the only status that prevents geometry assignment (it returns early
+        # because the engine produced no usable shape).
+        # All other non-OK statuses are warnings: they print a message but allow execution to
+        # continue so that the analytical fallback geometry is still assigned below. Any new status
+        # added in future must explicitly decide which category it belongs to.
         match res.status:
             case ArchTessellation.TessellationStatus.INVALID_DIMENSIONS:
                 FreeCAD.Console.PrintWarning(

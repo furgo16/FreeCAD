@@ -1824,17 +1824,68 @@ def getFaceGeometry(obj, subname=None):
 
 def getFaceUV(face):
     """
-    Computes the local coordinate system basis vectors for a face.
-    Returns (u_vec, v_vec, normal, center_point).
+    Computes a stable, right-handed orthonormal basis for a face.
+
+    The raw tangents from the geometry kernel point in arbitrary directions depending on surface
+    parameterisation, which varies by face origin and modelling history.  This function
+    post-processes them into a predictable convention so that callers (tiling grids, texture
+    mapping) produce consistent results regardless of how the underlying solid was constructed.
+
+    Stabilisation convention
+    ------------------------
+    Each tangent is aligned with the world axis it is most parallel to, and flipped if that axis
+    component is negative.  "Most parallel" is determined by the largest absolute dot product with
+    the world axes, which handles 45-degree faces deterministically (no tie-breaking ambiguity from
+    index order).  The 0.1 threshold guards against nearly degenerate faces where the dominant
+    component is too small to be meaningful.
+
+    After the flip the basis is re-orthonormalised via cross products to enforce strict
+    right-handedness (U × V = N) in case the flip introduced a small angular error.
+
+    Note: the face orientation (Reversed flag) is a topological property that depends on the face's
+    role within a solid, not on the surface geometry.  Callers that need the outward-pointing normal
+    should negate it themselves when ``face.Orientation == "Reversed"``.
+
+    Parameters
+    ----------
+    face : Part.Face
+        The face whose basis is required.
+
+    Returns
+    -------
+    tuple
+        (u_vec, v_vec, normal, center_point) — all unit vectors.
     """
     u_p, v_p = face.Surface.parameter(face.BoundBox.Center)
     u_vec, v_vec = face.Surface.tangent(u_p, v_p)
-    u_vec.normalize()
 
     normal = u_vec.cross(v_vec)
     normal.normalize()
     v_vec = normal.cross(u_vec)
     v_vec.normalize()
+    u_vec.normalize()
+
+    # Stabilise each tangent: flip it if its dominant world-axis component
+    # is negative.  Using dot products instead of component indexing avoids
+    # the tie-breaking ambiguity that arises for 45-degree faces.
+    world_axes = [
+        FreeCAD.Vector(1, 0, 0),
+        FreeCAD.Vector(0, 1, 0),
+        FreeCAD.Vector(0, 0, 1),
+    ]
+    for vec in [u_vec, v_vec]:
+        dots = [vec.dot(ax) for ax in world_axes]
+        abs_dots = [abs(d) for d in dots]
+        max_abs = max(abs_dots)
+        if max_abs > 0.1:
+            dominant_dot = dots[abs_dots.index(max_abs)]
+            if dominant_dot < 0:
+                vec.multiply(-1)
+
+    # Re-orthonormalise to enforce strict right-handedness after the flip.
+    u_vec.normalize()
+    v_vec = normal.cross(u_vec).normalize()
+    u_vec = v_vec.cross(normal).normalize()
 
     center_point = face.Surface.value(u_p, v_p)
     return u_vec, v_vec, normal, center_point

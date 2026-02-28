@@ -517,17 +517,13 @@ if FreeCAD.GuiUp:
             # not the covering object's Placement rotation. Deriving u_vec from obj.Placement
             # would make the texture basis track the covering's orientation, which cancels
             # the Flat Lines inverse-rotation transform and breaks rotated objects.
+            # getFaceUV now owns the tangent stabilisation (dominant-axis sign normalisation
+            # and re-orthonormalisation), so no post-processing is needed here.
             u_vec, v_vec, normal, center_point = Arch.getFaceUV(base_face)
             if base_face.Orientation == "Reversed":
                 normal = -normal
-            for vec in [u_vec, v_vec]:
-                vals = [abs(vec.x), abs(vec.y), abs(vec.z)]
-                max_val = max(vals)
-                if max_val > 0.1 and vec[vals.index(max_val)] < 0:
-                    vec.multiply(-1)
-            u_vec.normalize()
-            v_vec = normal.cross(u_vec).normalize()
-            u_vec = v_vec.cross(normal).normalize()
+                v_vec = normal.cross(u_vec).normalize()
+                u_vec = v_vec.cross(normal).normalize()
 
             # Calculate origin
             if obj.TileAlignment == "Custom":
