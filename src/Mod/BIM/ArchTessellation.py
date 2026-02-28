@@ -5,6 +5,7 @@
 # This file is part of the FreeCAD Arch workbench.
 # You can find the full license text in the LICENSE file in the root directory.
 
+import math
 import FreeCAD
 import Part
 from enum import Enum, auto
@@ -579,9 +580,18 @@ class RectangularTessellator(Tessellator):
                     tile = Part.makePlane(self.length, self.width, FreeCAD.Vector(u_pos, v_pos, 0))
                 tiles.append(tile)
 
-        # Combine. No Placement is set on tile_grid: it stays in the same local frame
-        # as the substrate so that common() operates on consistent coordinates.
+        # Combine in local frame.
         tile_grid = Part.makeCompound(tiles)
+
+        # Apply rotation around the local Z axis (the face normal in local space).
+        # self.rotation is the user-specified grid rotation in degrees. We apply it
+        # here via transformShape so the tile grid and the substrate remain in the
+        # same coordinate frame for the boolean intersection that follows.
+        # This mirrors the rotation already encoded in final_cl.Placement = tr.
+        if self.rotation:
+            rot_mat = FreeCAD.Matrix()
+            rot_mat.rotateZ(math.radians(self.rotation))
+            tile_grid.transformShape(rot_mat)
 
         local_normal = FreeCAD.Vector(0, 0, 1)
 
