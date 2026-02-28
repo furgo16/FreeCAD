@@ -573,9 +573,10 @@ class TestArchCovering(TestArchBase.TestArchBase):
 
         # Scenario: 200x200 tiles, 50 mm joint.
         # Step is 250 mm. 1000/250 = 4 tiles precisely per side. Total = 16.
-        tessellator = ArchTessellation.RectangularTessellator(
-            length=200, width=200, thickness=10, joint=50
+        cfg = ArchTessellation.TileConfig(
+            finish_mode="Solid Tiles", length=200, width=200, thickness=10, joint=50
         )
+        tessellator = ArchTessellation.RectangularTessellator(cfg)
         result = tessellator.compute(substrate, origin, u, n)
 
         self.assertEqual(result.status, ArchTessellation.TessellationStatus.OK)
@@ -594,14 +595,20 @@ class TestArchCovering(TestArchBase.TestArchBase):
         origin = App.Vector(0, 0, 0)
 
         # Case 1: invalid dimensions (< 1.0mm)
-        t1 = ArchTessellation.RectangularTessellator(0.5, 100, 0, 0)
+        cfg1 = ArchTessellation.TileConfig(
+            finish_mode="Solid Tiles", length=0.5, width=100, thickness=0, joint=0
+        )
+        t1 = ArchTessellation.RectangularTessellator(cfg1)
         res1 = t1.compute(substrate, origin, u, n)
         self.assertEqual(res1.status, ArchTessellation.TessellationStatus.INVALID_DIMENSIONS)
 
         # Case 2: too many tiles (> 10,000)
         # 1000mm face / 5mm step = 200 divisions. 200^2 = 40,000 tiles.
         large_substrate = Part.makePlane(1000, 1000)
-        t2 = ArchTessellation.RectangularTessellator(4, 4, 0, 1)
+        cfg2 = ArchTessellation.TileConfig(
+            finish_mode="Solid Tiles", length=4, width=4, thickness=0, joint=1
+        )
+        t2 = ArchTessellation.RectangularTessellator(cfg2)
         res2 = t2.compute(large_substrate, origin, u, n)
         self.assertEqual(res2.status, ArchTessellation.TessellationStatus.COUNT_TOO_HIGH)
         # In high-count mode, the geometry should be a monolithic compound (solid + grid)

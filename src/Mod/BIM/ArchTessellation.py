@@ -85,6 +85,137 @@ class TessellationResult:
         self.status = status
 
 
+class TileConfig:
+    """
+    Typed configuration for rectangular tile tessellation modes (Solid Tiles, Parametric
+    Pattern, Monolithic).
+
+    Centralises all parameter validation and the stagger-offset resolution that was
+    previously scattered across ``create_tessellator``.  Using a dataclass instead of a
+    plain dict means a typo in a key is a ``AttributeError`` at construction time, not a
+    silent ``0`` default discovered during a recompute.
+
+    Parameters
+    ----------
+    finish_mode : str
+        One of ``"Solid Tiles"``, ``"Parametric Pattern"``, or ``"Monolithic"``.
+    length, width, thickness, joint : float
+        Tile dimensions in mm.
+    rotation : float
+        Grid rotation in degrees.
+    stagger_type : str
+        Running-bond preset name.  Resolved to ``offset_u`` automatically.
+    stagger_custom : float
+        Custom stagger offset in mm, used only when ``stagger_type == "Custom"``.
+    """
+
+    def __init__(
+        self,
+        finish_mode,
+        length,
+        width,
+        thickness,
+        joint,
+        rotation=0.0,
+        stagger_type="Stacked (None)",
+        stagger_custom=0.0,
+    ):
+        self.finish_mode = finish_mode
+        self.length = length
+        self.width = width
+        self.thickness = thickness
+        self.joint = joint
+        self.rotation = rotation
+        self.stagger_type = stagger_type
+        self.stagger_custom = stagger_custom
+
+        # Derived flags
+        self.extrude = finish_mode in ("Solid Tiles", "Monolithic")
+        self.monolithic = finish_mode == "Monolithic"
+
+        # Resolve the stagger enum to a concrete mm offset.
+        # Keeping this logic here means create_tessellator and the caller both stay
+        # ignorant of the enum strings; they just see a numeric offset.
+        _stagger_map = {
+            "Half Bond (1/2)": length / 2.0,
+            "Third Bond (1/3)": length / 3.0,
+            "Quarter Bond (1/4)": length / 4.0,
+        }
+        if stagger_type in _stagger_map:
+            self.offset_u = _stagger_map[stagger_type]
+        elif stagger_type == "Custom":
+            self.offset_u = stagger_custom
+        else:
+            self.offset_u = 0.0
+
+
+class HatchConfig:
+    """
+    Typed configuration for hatch-pattern tessellation.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ``.pat`` file.
+    pattern_name : str
+        Name of the pattern within the file.
+    scale : float
+        Pattern scale factor.
+    rotation : float
+        Pattern rotation in degrees.
+    thickness : float
+        Substrate thickness in mm (for the backing solid).
+    """
+
+    def __init__(self, filename, pattern_name, scale=1.0, rotation=0.0, thickness=0.0):
+        self.filename = filename
+        self.pattern_name = pattern_name
+        self.scale = max(MIN_DIMENSION, scale)
+        self.rotation = rotation
+        self.thickness = thickness
+
+
+def _localise_substrate(substrate_3d, origin_3d, u_vec, normal):
+    """
+    Establish an orthonormal local frame, derive a world placement from it, and
+    return the substrate transformed into that local frame.
+
+    Both ``RectangularTessellator`` and ``HatchTessellator`` need exactly this
+    three-step preamble.  Keeping one copy here ensures they can never drift apart.
+
+    Parameters
+    ----------
+    substrate_3d : Part.Face
+        The source face in world space.
+    origin_3d : FreeCAD.Vector
+        World-space grid anchor (becomes the local origin).
+    u_vec : FreeCAD.Vector
+        World-space U tangent of the face (need not be normalised).
+    normal : FreeCAD.Vector
+        World-space face normal (need not be normalised).
+
+    Returns
+    -------
+    substrate : Part.Shape
+        A copy of ``substrate_3d`` transformed into local space (origin at
+        ``origin_3d``, local Z aligned with ``normal``).
+    placement : FreeCAD.Placement
+        The world placement that maps local→world.  Assign to ``obj.Placement``
+        to position the finished geometry correctly in the scene.
+    """
+    n_vec = FreeCAD.Vector(normal).normalize()
+    u_vec = FreeCAD.Vector(u_vec).normalize()
+    v_vec = n_vec.cross(u_vec).normalize()
+    u_vec = v_vec.cross(n_vec).normalize()
+
+    placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
+    to_local = placement.inverse().toMatrix()
+
+    substrate = substrate_3d.copy()
+    substrate.transformShape(to_local)
+    return substrate, placement
+
+
 class Tessellator(ABC):
     """Abstract base class for pattern tessellators."""
 
@@ -100,29 +231,18 @@ class Tessellator(ABC):
 
 
 class RectangularTessellator(Tessellator):
-    """Generates standard grid or running bond patterns."""
+    """Generates standard grid or running bond patterns from a :class:`TileConfig`."""
 
-    def __init__(
-        self,
-        length,
-        width,
-        thickness,
-        joint,
-        offset_u=0.0,
-        offset_v=0.0,
-        rotation=0.0,
-        extrude=True,
-        monolithic=False,
-    ):
-        self.length = length
-        self.width = width
-        self.thickness = thickness
-        self.joint = joint
-        self.offset_u = offset_u
-        self.offset_v = offset_v
-        self.rotation = rotation
-        self.extrude = extrude
-        self.monolithic = monolithic
+    def __init__(self, config):
+        self.length = config.length
+        self.width = config.width
+        self.thickness = config.thickness
+        self.joint = config.joint
+        self.offset_u = config.offset_u
+        self.offset_v = 0.0  # V-axis stagger is not exposed in the UI
+        self.rotation = config.rotation
+        self.extrude = config.extrude
+        self.monolithic = config.monolithic
 
     def compute(self, substrate_3d, origin_3d, u_vec, normal):
         """
@@ -163,19 +283,11 @@ class RectangularTessellator(Tessellator):
             - quantities: Calculated BIM data (counts, areas, joint lengths).
             - status: The performance flag indicating how the result was computed.
         """
-        # Establish strict orthonormal basis for the local coordinate system
-        n_vec = FreeCAD.Vector(normal).normalize()
-        u_vec = FreeCAD.Vector(u_vec).normalize()
-        v_vec = n_vec.cross(u_vec).normalize()
-        u_vec = v_vec.cross(n_vec).normalize()
-
-        # Derive placement matrix and localization transform
-        placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
-        to_local = placement.inverse().toMatrix()
-
-        # Localize substrate to the origin
-        substrate = substrate_3d.copy()
-        substrate.transformShape(to_local)
+        # Localise the substrate into the grid's local coordinate frame.
+        # The shared helper normalises the basis, builds the placement, and transforms
+        # the substrate — all in one place so RectangularTessellator and HatchTessellator
+        # cannot drift apart.
+        substrate, placement = _localise_substrate(substrate_3d, origin_3d, u_vec, normal)
 
         # Monolithic Fast-Path
         if self.monolithic:
@@ -214,7 +326,7 @@ class RectangularTessellator(Tessellator):
         # Visual grid generation
         # Generate the centerline wires for visualization.
         # If status is EXTREME_COUNT, this returns empty lists to save memory.
-        tr, h_edges, v_edges, final_cl = self._generate_visual_grid(
+        h_edges, v_edges, final_cl = self._generate_visual_grid(
             FreeCAD.Vector(0, 0, 0),
             FreeCAD.Vector(1, 0, 0),
             FreeCAD.Vector(0, 1, 0),
@@ -334,10 +446,16 @@ class RectangularTessellator(Tessellator):
         list
             A list of Part.Edge objects.
         """
+        # NOTE: Joint length is measured along centerlines, not face widths.
+        # For a joint of width W, the centerline sits W/2 inside each tile edge.
+        # The resulting length_joints quantity therefore accurately represents the
+        # total run of jointing material for joints that are narrow relative to
+        # tile size (the common case), but will be slightly underestimated if a
+        # very wide joint (e.g. 50 mm) straddles the substrate boundary — the
+        # clipped centerline is shorter than the clipped joint face would be.
         edges = []
         for i in range(-count, count):
-            # Calculate position on the orthogonal axis
-            # The line is placed after the tile body + half the joint
+            # The centerline sits at: tile_body_end + half_joint
             pos = i * step + ortho_dim + (self.joint / 2)
 
             if is_horizontal:
@@ -376,8 +494,11 @@ class RectangularTessellator(Tessellator):
         Returns
         -------
         tuple
-            (placement, h_edges_list, v_edges_list, compound_shape)
+            (h_edges_list, v_edges_list, compound_shape)
         """
+        # tr is local: it encodes the grid rotation so the visual centerlines
+        # render in the right orientation, but the caller never needs it
+        # (the world placement is returned by compute() via res.placement).
         tr = FreeCAD.Placement(
             origin,
             FreeCAD.Rotation(u_vec, v_vec, normal).multiply(
@@ -413,7 +534,7 @@ class RectangularTessellator(Tessellator):
             final_cl = Part.Compound(h_edges + v_edges)
             final_cl.Placement = tr
 
-        return tr, h_edges, v_edges, final_cl
+        return h_edges, v_edges, final_cl
 
     def _calculate_linear_quantities(self, substrate, params, h_edges, v_edges):
         """
@@ -652,32 +773,48 @@ class RectangularTessellator(Tessellator):
 
 
 class HatchTessellator(Tessellator):
-    """Generates hatch patterns using the Draft Hatch engine."""
+    """Generates hatch patterns using the Draft Hatch engine from a :class:`HatchConfig`."""
 
-    def __init__(self, filename, name, scale, rotation, thickness=0.0):
-        self.filename = filename
-        self.name = name
-        self.scale = max(MIN_DIMENSION, scale)
-        self.rotation = rotation
-        self.thickness = thickness
+    def __init__(self, config):
+        self.filename = config.filename
+        self.pattern_name = config.pattern_name
+        self.scale = config.scale  # already clamped in HatchConfig
+        self.rotation = config.rotation
+        self.thickness = config.thickness
+
+    def _resolve_pattern_name(self):
+        """
+        Return the pattern name to use, auto-detecting from the file if the
+        configured name is empty.
+
+        Issue 7 fix: the resolved name is returned as a local value and never
+        written back to ``self``.  This keeps ``compute()`` side-effect-free with
+        respect to instance state, so tessellators are safe to cache or reuse.
+        """
+        import os
+
+        if self.pattern_name:
+            return self.pattern_name
+
+        if not self.filename or not os.path.exists(self.filename):
+            return ""
+
+        try:
+            with open(self.filename, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("*"):
+                        parts = line.split(",")
+                        if parts:
+                            return parts[0][1:].strip()
+        except Exception as e:
+            FreeCAD.Console.PrintWarning(f"ArchTessellation: Could not read pattern file: {e}\n")
+        return ""
 
     def compute(self, substrate_3d, origin_3d, u_vec, normal):
         import TechDraw
-        import os
 
-        # Establish strict orthonormal basis for the local coordinate system
-        n_vec = FreeCAD.Vector(normal).normalize()
-        u_vec = FreeCAD.Vector(u_vec).normalize()
-        v_vec = n_vec.cross(u_vec).normalize()
-        u_vec = v_vec.cross(n_vec).normalize()
-
-        # Derive placement matrix and localization transform
-        placement = FreeCAD.Placement(origin_3d, FreeCAD.Rotation(u_vec, v_vec, n_vec))
-        to_local = placement.inverse().toMatrix()
-
-        # Localize substrate to the origin
-        substrate = substrate_3d.copy()
-        substrate.transformShape(to_local)
+        # Localise the substrate into the grid's local coordinate frame.
+        substrate, placement = _localise_substrate(substrate_3d, origin_3d, u_vec, normal)
 
         # TechDraw requires a Part.Face instance. We extract it once here
         # so it is available for both the hatching logic and the fallback paths.
@@ -689,25 +826,11 @@ class HatchTessellator(Tessellator):
         # Initialize the result geometry to the localized substrate.
         final_local_geo = substrate
 
-        # Safety fallback: auto-detect pattern name if missing.
-        # Passing an empty name string to TechDraw.makeGeomHatch freezes FreeCAD.
-        if self.filename and not self.name and os.path.exists(self.filename):
-            try:
-                with open(self.filename, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if line.startswith("*"):
-                            # Extract name between '*' and ','
-                            parts = line.split(",")
-                            if parts:
-                                self.name = parts[0][1:].strip()
-                                break
-            except Exception as e:
-                FreeCAD.Console.PrintWarning(
-                    f"ArchTessellation: Could not read pattern file: {e}\n"
-                )
+        # Resolve the pattern name without mutating self (Issue 7).
+        pattern_name = self._resolve_pattern_name()
 
         # Only proceed if we have both a file and a valid name
-        if self.filename and self.name:
+        if self.filename and pattern_name:
             pat_shape = None
             try:
                 # Apply pattern rotation
@@ -729,7 +852,7 @@ class HatchTessellator(Tessellator):
 
                 try:
                     pat_shape = TechDraw.makeGeomHatch(
-                        local_face, float(self.scale), str(self.name), str(self.filename)
+                        local_face, float(self.scale), str(pattern_name), str(self.filename)
                     )
                 except Exception as e:
                     FreeCAD.Console.PrintWarning(
@@ -773,42 +896,27 @@ class HatchTessellator(Tessellator):
         return TessellationResult(geometry=final_local_geo, placement=placement)
 
 
-def create_tessellator(mode, config):
-    match mode:
-        case "Hatch Pattern":
-            return HatchTessellator(
-                config.get("PatternFile"),
-                config.get("PatternName"),
-                config.get("PatternScale", 1.0),
-                config.get("Rotation", 0.0),
-                config.get("TileThickness", 0.0),
-            )
-        case "Solid Tiles" | "Parametric Pattern" | "Monolithic":
-            tile_len = config.get("TileLength", 0)
+def create_tessellator(config):
+    """
+    Instantiate the correct :class:`Tessellator` subclass for the given typed config.
 
-            # Resolve Stagger Enum to Offset
-            stagger_type = config.get("StaggerType", "Stacked (None)")
-            offset_u = 0.0
+    Issue 1 fix: accepts :class:`TileConfig` or :class:`HatchConfig` instead of a
+    plain dict.  The config type determines the tessellator class unambiguously, so
+    callers cannot accidentally pass the wrong keys and get a silently wrong result.
 
-            if stagger_type == "Half Bond (1/2)":
-                offset_u = tile_len / 2.0
-            elif stagger_type == "Third Bond (1/3)":
-                offset_u = tile_len / 3.0
-            elif stagger_type == "Quarter Bond (1/4)":
-                offset_u = tile_len / 4.0
-            elif stagger_type == "Custom":
-                offset_u = config.get("StaggerCustom", 0.0)
+    Parameters
+    ----------
+    config : TileConfig | HatchConfig
+        Fully-specified tessellation configuration.  Construct it in the caller so
+        that Python raises ``AttributeError`` immediately if a required field is missing.
 
-            return RectangularTessellator(
-                tile_len,
-                config.get("TileWidth", 0),
-                config.get("TileThickness", 0),
-                config.get("JointWidth", 0),
-                offset_u,
-                0.0,  # offset_v is always 0 now
-                config.get("Rotation", 0),
-                config.get("Extrude", True),
-                monolithic=(mode == "Monolithic"),
-            )
-        case _:
-            return None
+    Returns
+    -------
+    Tessellator
+        A ready-to-call tessellator instance.
+    """
+    if isinstance(config, HatchConfig):
+        return HatchTessellator(config)
+    if isinstance(config, TileConfig):
+        return RectangularTessellator(config)
+    raise TypeError(f"create_tessellator: unknown config type {type(config).__name__!r}")

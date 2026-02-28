@@ -423,24 +423,29 @@ class _Covering(ArchComponent.Component):
         # Determine the pattern origin in global space.
         origin_3d = self._calculate_origin(effective_face, center, u_vec, v_vec, obj)
 
-        # Configure the tessellator.
-        is_solid_mode = obj.FinishMode in ["Solid Tiles", "Monolithic"]
-        config = {
-            "TileLength": obj.TileLength.Value,
-            "TileWidth": obj.TileWidth.Value,
-            "JointWidth": obj.JointWidth.Value,
-            "Rotation": obj.Rotation.Value,
-            "PatternFile": obj.PatternFile,
-            "PatternName": obj.PatternName,
-            "PatternScale": obj.PatternScale,
-            "TileThickness": obj.TileThickness.Value,
-            "Extrude": is_solid_mode,
-            "StaggerType": getattr(obj, "StaggerType", "Stacked (None)"),
-            "StaggerCustom": getattr(obj, "StaggerCustom", FreeCAD.Units.Quantity(0)).Value,
-        }
+        # Build a typed config so that missing or misspelled fields raise AttributeError
+        # at construction time instead of silently defaulting to zero inside the engine.
+        if obj.FinishMode == "Hatch Pattern":
+            config = ArchTessellation.HatchConfig(
+                filename=obj.PatternFile,
+                pattern_name=obj.PatternName,
+                scale=obj.PatternScale,
+                rotation=obj.Rotation.Value,
+                thickness=obj.TileThickness.Value,
+            )
+        else:
+            config = ArchTessellation.TileConfig(
+                finish_mode=obj.FinishMode,
+                length=obj.TileLength.Value,
+                width=obj.TileWidth.Value,
+                thickness=obj.TileThickness.Value,
+                joint=obj.JointWidth.Value,
+                rotation=obj.Rotation.Value,
+                stagger_type=getattr(obj, "StaggerType", "Stacked (None)"),
+                stagger_custom=getattr(obj, "StaggerCustom", FreeCAD.Units.Quantity(0)).Value,
+            )
 
-        # The tessellator handles world-to-local transformations internally.
-        tessellator = ArchTessellation.create_tessellator(obj.FinishMode, config)
+        tessellator = ArchTessellation.create_tessellator(config)
         res = tessellator.compute(
             effective_face,
             origin_3d,
