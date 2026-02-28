@@ -82,22 +82,20 @@ class BIM_Covering:
         """
         Initializes the Covering tool session.
 
-        Captures selection, instantiates the Task Panel logic,
-        and registers the panel with the FreeCAD Task Manager to begin the user interaction.
+        Captures the current selection immediately (before the event loop yields), then defers
+        the actual session launch via a zero-millisecond timer. The deferral is necessary to
+        escape the C++ AutoTransaction that Command::_invoke() wraps around Activated(): that
+        transaction commits the moment Activated() returns, before the task panel opens. By
+        deferring, we gain full control over the transaction lifetime for the entire session.
         """
-        # Check for pre-selection and fill in the task panel with it, if the user has already
-        # selected something before executing the command
         sel = FreeCADGui.Selection.getSelectionEx()
         selection_list = []
         if sel:
             for s in sel:
                 obj = s.Object
-                # PartDesign Normalization:
-                # If an internal feature is selected, link to the Body instead.
+                # PartDesign Normalization: if an internal feature is selected, link to the Body.
                 for parent in obj.InList:
                     if parent.isDerivedFrom("PartDesign::Body"):
-                        # Check if obj is part of the Body's geometry definition
-                        # Group contains features (Pad, Pocket), BaseFeature contains the root
                         if (obj in parent.Group) or (getattr(parent, "BaseFeature", None) == obj):
                             obj = parent
                             break
@@ -109,21 +107,26 @@ class BIM_Covering:
                             selection_list.append((obj, [sub]))
                             face_found_in_subelements = True
 
-                # Fallback to whole object if no faces were explicitly selected, which handles
-                # whole-object selections and invalid sub-element selections (e.g., edges).
                 if not face_found_in_subelements:
                     selection_list.append(obj)
 
-        # Launch the task panel
+        # Defer launch so that C++'s AutoTransaction has committed (empty) before we open ours.
+        QtCore.QTimer.singleShot(0, lambda: self._launch_session(selection_list))
+
+    def _launch_session(self, selection_list):
+        """Opens the covering transaction and task panel outside the C++ AutoTransaction."""
+        if not FreeCAD.ActiveDocument:
+            return
+
         import ArchCoveringGui
 
+        FreeCAD.ActiveDocument.openTransaction("Covering")
         self.task_panel = ArchCoveringGui.ArchCoveringTaskPanel(
             command=self, selection=selection_list
         )
         FreeCADGui.Control.showDialog(self.task_panel)
 
         if not selection_list:
-            # Auto-enable picking if nothing selected
             self.task_panel.setPicking(True)
 
     def finish(self):

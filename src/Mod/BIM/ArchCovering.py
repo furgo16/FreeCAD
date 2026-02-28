@@ -299,11 +299,49 @@ class _Covering(ArchComponent.Component):
 
     def onDocumentRestored(self, obj):
         """
-        Overrides the parent callback triggered after the document is fully restored. Used to
-        ensure property schema consistency and perform backward compatibility migrations.
+        Overrides the parent callback triggered after the document is fully restored.
+        Ensures property schema consistency and schedules a purge of any orphaned
+        CoveringTemplate objects left behind by a crash.
+
+        The purge is deferred via ToDo.delay (a zero-millisecond QTimer) because
+        doc.removeObject() is not safe to call from within onDocumentRestored: the C++
+        Document::afterRestore() holds a raw-pointer vector of all objects that it continues
+        to iterate after the Python callbacks return. Deleting an object during the callback
+        leaves a dangling pointer in that vector and causes a segfault.
         """
         super().onDocumentRestored(obj)
         self.setProperties(obj)
+
+        if not FreeCAD.GuiUp:
+            return  # No Qt event loop, no ToDo, and no GUI task panel that could create orphans.
+
+        doc = obj.Document
+        orphans = [
+            o.Name
+            for o in doc.Objects
+            if o.Label.startswith("CoveringTemplate")
+            and getattr(getattr(o, "Proxy", None), "Type", None) == "Covering"
+        ]
+        if orphans:
+            from draftutils import todo
+
+            def _purge(doc_name):
+                doc = FreeCAD.getDocument(doc_name)
+                if doc is None:
+                    return
+                old_undo_mode = doc.UndoMode
+                doc.UndoMode = 0
+                try:
+                    for name in orphans:
+                        if doc.getObject(name):
+                            FreeCAD.Console.PrintMessage(
+                                f"ArchCovering: removing orphaned template '{name}'\n"
+                            )
+                            doc.removeObject(name)
+                finally:
+                    doc.UndoMode = old_undo_mode
+
+            todo.ToDo.delay(_purge, doc.Name)
 
     def onChanged(self, obj, prop):
         """Method called when a property is changed."""
@@ -313,11 +351,13 @@ class _Covering(ArchComponent.Component):
         """
         Returns a stable, right-handed orthonormal basis for the face.
 
-        The stabilisation of the raw surface tangents (dominant-axis alignment, sign normalisation,
-        re-orthonormalisation) is handled inside ``Arch.getFaceUV``. The only caller-side
-        adjustment needed here is the orientation flip: ``face.Orientation == "Reversed"`` is a
-        topological property of how this face sits within its parent solid, not a property of the
-        surface geometry, so it must be handled here rather than inside the geometry utility.
+        The stabilisation of the raw surface tangents (dominant-axis alignment,
+        sign normalisation, re-orthonormalisation) is handled inside
+        ``Arch.getFaceUV``.  The only caller-side adjustment needed here is the
+        orientation flip: ``face.Orientation == "Reversed"`` is a topological
+        property of how this face sits within its parent solid, not a property
+        of the surface geometry, so it must be handled here rather than inside
+        the geometry utility.
         """
         u_vec, v_vec, normal, center = Arch.getFaceUV(face)
 
@@ -336,18 +376,20 @@ class _Covering(ArchComponent.Component):
 
         Design intent
         -------------
-        BorderSetback shrinks the **outer perimeter** of the face inward by the specified distance.
-        Inner wires (holes such as drain cutouts or column penetrations) are intentionally left at
-        their original size and position. The setback models a finishing margin at the room boundary
-        — for example, keeping tiles away from skirting boards — not a clearance around all
-        obstacles. Expanding holes by the setback distance would be a separate feature, not a
-        natural extension of this property.
+        BorderSetback shrinks the **outer perimeter** of the face inward by the
+        specified distance.  Inner wires (holes such as drain cutouts or column
+        penetrations) are intentionally left at their original size and position.
+        The setback models a finishing margin at the room boundary — for example,
+        keeping tiles away from skirting boards — not a clearance around all
+        obstacles.  Expanding holes by the setback distance would be a separate
+        feature, not a natural extension of this property.
 
         Complexity note
         ---------------
-        A simple ``Part.makeFace()`` cannot be used here because it crashes when the shrunken outer
-        boundary crosses an existing inner hole. Instead the function shrinks the outer wire, then
-        re-cuts each original inner hole via boolean subtraction.
+        A simple ``Part.makeFace()`` cannot be used here because it crashes when
+        the shrunken outer boundary crosses an existing inner hole.  Instead the
+        function shrinks the outer wire, then re-cuts each original inner hole
+        via boolean subtraction.
         """
         import Part
 
@@ -431,6 +473,9 @@ class _Covering(ArchComponent.Component):
 
         base_face = Arch.getFaceGeometry(obj.Base)
         if not base_face:
+            FreeCAD.Console.PrintWarning(
+                f"ArchCovering [{obj.Label}]: no base face found, skipping recompute.\n"
+            )
             return
 
         # Establish a stable coordinate system based on the global axes.
@@ -474,10 +519,11 @@ class _Covering(ArchComponent.Component):
 
         # Update the UI with any status messages from the engine.
         #
-        # INVALID_DIMENSIONS is the only status that prevents geometry assignment (it returns early
-        # because the engine produced no usable shape).
-        # All other non-OK statuses are warnings: they print a message but allow execution to
-        # continue so that the analytical fallback geometry is still assigned below. Any new status
+        # Control-flow contract: INVALID_DIMENSIONS is the only status that
+        # prevents geometry assignment (it returns early because the engine
+        # produced no usable shape).  All other non-OK statuses are warnings:
+        # they print a message but allow execution to continue so that the
+        # analytical fallback geometry is still assigned below.  Any new status
         # added in future must explicitly decide which category it belongs to.
         match res.status:
             case ArchTessellation.TessellationStatus.INVALID_DIMENSIONS:

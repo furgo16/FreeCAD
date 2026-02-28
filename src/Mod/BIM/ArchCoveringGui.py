@@ -325,9 +325,8 @@ if FreeCAD.GuiUp:
             if not hasattr(self, "texture"):
                 self.texture = None
 
-            # If we are loading the file and "Shape" loaded before "TextureImage", obj.TextureImage
-            # will raise AttributeError. We simply return. The loader will call updateData again
-            # when it reaches "TextureImage".
+            # TextureImage and TextureScale live on the DocumentObject. Guard against
+            # the case where the object has not yet been fully restored.
             if not hasattr(obj, "TextureImage") or not hasattr(obj, "TextureScale"):
                 return
 
@@ -476,8 +475,6 @@ if FreeCAD.GuiUp:
             joint_width = obj.JointWidth.Value if hasattr(obj, "JointWidth") else 0.0
             border_setback = obj.BorderSetback.Value
 
-            # We don't need the full Boolean cut logic here, just the perimeter offset
-            # because texture mapping is planar and ignores holes.
             # Note: makeOffset2D returns a new shape; it does not modify in-place.
             # Guard against degenerate offsets (face too small) which raise CADKernelError.
             total_offset = border_setback + joint_width
@@ -641,6 +638,8 @@ if FreeCAD.GuiUp:
             self.selected_sub = None
             # Keep references to ExpressionBinding objects to prevent garbage collection
             self.bindings = []
+            # Auto-populated by _setup_bound_spinbox; consumed by _rebind_to_buffer
+            self._bound_spinboxes = []
 
             # Handle selection list or single object
             if selection and not isinstance(selection, list):
@@ -948,15 +947,18 @@ if FreeCAD.GuiUp:
             h_custom.addWidget(self.btn_match_wp)
             vbox.addLayout(h_custom)
 
-            # Custom offsets
-            self.sb_u_off = QtGui.QDoubleSpinBox()
-            self.sb_u_off.setRange(-1000000, 1000000)
-            self.sb_u_off.setSuffix(" mm")
-            self.sb_u_off.setToolTip(translate("Arch", "Shift the grid along U"))
-            self.sb_v_off = QtGui.QDoubleSpinBox()
-            self.sb_v_off.setRange(-1000000, 1000000)
-            self.sb_v_off.setSuffix(" mm")
-            self.sb_v_off.setToolTip(translate("Arch", "Shift the grid along V"))
+            # Custom offsets — bound to AlignmentOffset.x and AlignmentOffset.y
+            offset = self.template.buffer.AlignmentOffset
+            self.sb_u_off = self._setup_bound_spinbox(
+                "AlignmentOffset.x",
+                translate("Arch", "Shift the grid along U"),
+                initial_value=FreeCAD.Units.Quantity(offset.x, FreeCAD.Units.Length),
+            )
+            self.sb_v_off = self._setup_bound_spinbox(
+                "AlignmentOffset.y",
+                translate("Arch", "Shift the grid along V"),
+                initial_value=FreeCAD.Units.Quantity(offset.y, FreeCAD.Units.Length),
+            )
             form_offsets = QtGui.QFormLayout()
             form_offsets.addRow(translate("Arch", "U Offset:"), self.sb_u_off)
             form_offsets.addRow(translate("Arch", "V Offset:"), self.sb_v_off)
@@ -990,19 +992,47 @@ if FreeCAD.GuiUp:
             self.layout_layout.addWidget(grp_bound)
 
         # Helper for binding properties to a quantity spinbox with default
-        def _setup_bound_spinbox(self, prop_name, tooltip=None):
-            """Binds a quantity spinbox to the template buffer."""
-            sb = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
-            prop = getattr(self.template.buffer, prop_name)
+        def _setup_bound_spinbox(self, prop_name, tooltip=None, initial_value=None):
+            """Creates a Gui::QuantitySpinBox bound to prop_name on the template buffer.
 
-            sb.setProperty("value", prop)
+            The widget self-registers into self._bound_spinboxes so that _rebind_to_buffer()
+            always has a complete inventory without manual maintenance.
+
+            ExpressionBinding.bind() populates the widget's initial value from the buffer
+            automatically for scalar properties. The initial_value parameter exists only for
+            dot-path sub-properties (e.g. "AlignmentOffset.x") where bind() may not resolve
+            the value — pass an explicit FreeCAD.Units.Quantity in those cases.
+
+            Parameters
+            ----------
+            prop_name : str
+                Property name on the template buffer, or a dot-path for sub-components
+                (e.g. "AlignmentOffset.x").
+            tooltip : str, optional
+            initial_value : FreeCAD.Units.Quantity, optional
+                Explicit initial value. Use only when prop_name is a dot-path.
+            """
+            sb = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
             if tooltip:
                 sb.setToolTip(translate("Arch", tooltip))
-
-            # This enables the f(x) icon
+            if initial_value is not None:
+                sb.setProperty("value", initial_value)
             FreeCADGui.ExpressionBinding(sb).bind(self.template.buffer, prop_name)
-
+            self._bound_spinboxes.append((sb, prop_name))
             return sb
+
+        def _rebind_to_buffer(self):
+            """Re-establishes ExpressionBinding on all bound spinboxes after the buffer is replaced.
+
+            In continue mode the buffer is removed and a new one created for each OK cycle.
+            ExpressionBinding stores a direct C++ pointer to the bound object, so all bindings
+            must be refreshed to point at the new buffer or the f(x) button will crash FreeCAD.
+            """
+            self.bindings = []
+            for sb, prop_name in self._bound_spinboxes:
+                binding = FreeCADGui.ExpressionBinding(sb)
+                binding.bind(self.template.buffer, prop_name)
+                self.bindings.append(binding)
 
         def _setupTilesPage(self):
             self.page_tiles = QtGui.QWidget()
@@ -1153,10 +1183,6 @@ if FreeCAD.GuiUp:
             if not is_custom:
                 self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
             self._on_alignment_mode_changed(not is_custom)
-
-            if self.template.buffer.AlignmentOffset:
-                self.sb_u_off.setValue(self.template.buffer.AlignmentOffset.x)
-                self.sb_v_off.setValue(self.template.buffer.AlignmentOffset.y)
 
             # Load hatch pattern data
             pat_file = self.template.buffer.PatternFile
@@ -1329,8 +1355,8 @@ if FreeCAD.GuiUp:
             # Clear the manual offsets when switching to Preset mode to prevent
             # them from being invisibly added to the standard alignment logic.
             if is_preset:
-                self.sb_u_off.setValue(0.0)
-                self.sb_v_off.setValue(0.0)
+                self.sb_u_off.setProperty("value", FreeCAD.Units.Quantity(0, FreeCAD.Units.Length))
+                self.sb_v_off.setProperty("value", FreeCAD.Units.Quantity(0, FreeCAD.Units.Length))
 
         def onMatchWP(self):
             """Snapshots the current working plane into the covering properties."""
@@ -1378,8 +1404,8 @@ if FreeCAD.GuiUp:
             v_off = delta.dot(v_basis)
 
             self.template.buffer.AlignmentOffset = FreeCAD.Vector(u_off, v_off, 0)
-            self.sb_u_off.setValue(u_off)
-            self.sb_v_off.setValue(v_off)
+            self.sb_u_off.setProperty("value", FreeCAD.Units.Quantity(u_off, FreeCAD.Units.Length))
+            self.sb_v_off.setProperty("value", FreeCAD.Units.Quantity(v_off, FreeCAD.Units.Length))
             self.radio_custom.setChecked(True)
 
         def onPickOrigin(self, state):
@@ -1486,8 +1512,12 @@ if FreeCAD.GuiUp:
                 self.template.buffer.AlignmentOffset = FreeCAD.Vector(
                     delta.dot(u_basis), delta.dot(v_basis), 0
                 )
-                self.sb_u_off.setValue(delta.dot(u_basis))
-                self.sb_v_off.setValue(delta.dot(v_basis))
+                self.sb_u_off.setProperty(
+                    "value", FreeCAD.Units.Quantity(delta.dot(u_basis), FreeCAD.Units.Length)
+                )
+                self.sb_v_off.setProperty(
+                    "value", FreeCAD.Units.Quantity(delta.dot(v_basis), FreeCAD.Units.Length)
+                )
                 self.radio_custom.setChecked(True)
 
             self._cleanup_snapper()
@@ -1592,7 +1622,11 @@ if FreeCAD.GuiUp:
             else:
                 obj.TileAlignment = self.combo_align.currentText()
 
-            obj.AlignmentOffset = FreeCAD.Vector(self.sb_u_off.value(), self.sb_v_off.value(), 0.0)
+            obj.AlignmentOffset = FreeCAD.Vector(
+                self.sb_u_off.property("value").Value,
+                self.sb_v_off.property("value").Value,
+                0.0,
+            )
 
             # Sync file paths
             if obj.FinishMode == "Hatch Pattern":
@@ -1615,36 +1649,30 @@ if FreeCAD.GuiUp:
             """
             Process the dialog input and modify or create the Covering object.
 
-            This method handles data synchronization from UI widgets to the underlying FreeCAD
-            objects, manages the undo/redo transaction, and handles the 'continue' workflow for
-            batch creation.
+            Transaction model
+            -----------------
+            Creation mode:
+                BIM_Covering._launch_session() opened a transaction before the task panel was
+                shown. The buffer was created inside it. On OK:
+                  - The real covering object(s) are created inside the same transaction.
+                  - doc.removeObject(buffer) is called inside the transaction. The C++ optimizer
+                    sees create+delete for the buffer in the same transaction and erases both,
+                    so the buffer never appears in the undo stack.
+                  - The transaction is committed → one clean undo entry per OK press.
+                Continue mode: after committing, a new transaction is opened immediately and a
+                new buffer is created inside it for the next iteration.
 
-            Returns
-            -------
-            bool
-                Always returns True to signal the dialog to close (unless 'continue'
-                is checked).
-
-            Notes
-            -----
-            1. Transaction management is manual here. This method opens a transaction explicitly.
-               Any early `return` statement added within the `try` block must ensure the transaction
-               is committed or aborted first, otherwise it will block the undo stack.
-            2. This method is connected to a Qt signal. Uncaught exceptions are frequently
-               suppressed by the Python/Qt bridge. We use `traceback.print_exc()` to ensure the full
-               stack trace appears in FreeCAD's Report View for notification purposes.
+            Edit mode:
+                The C++ layer opened a transaction when setEdit was called. The buffer was
+                created inside it. Same create+delete optimizer logic applies on OK.
+                The C++ transaction is committed by FreeCAD after accept() returns True.
             """
             try:
-                # Sync all values from UI widgets (bound and unbound) to the template buffer
                 self._sync_ui_to_target()
 
-                # Open a new transaction for the document modification
-                FreeCAD.ActiveDocument.openTransaction("Covering")
+                doc = FreeCAD.ActiveDocument
 
                 if not self.obj_to_edit:
-                    # Creation mode
-
-                    # Determine targets from selection
                     targets = self.selection_list
                     if not targets and self.selected_obj:
                         targets = (
@@ -1655,38 +1683,38 @@ if FreeCAD.GuiUp:
 
                     if targets:
                         for base in targets:
-                            # Create new object
                             new_obj = Arch.makeCovering(base)
-
-                            # Copy properties from the template buffer
                             self.template.apply_to(new_obj)
+
+                    self._save_user_preferences()
+
+                    # Remove buffer inside the open transaction so the optimizer erases it.
+                    doc.removeObject(self.template.buffer.Name)
+                    self.template.destroy()
+
+                    doc.recompute()
+                    doc.commitTransaction()
+
+                    if self.chk_continue.isChecked():
+                        doc.openTransaction("Covering")
+                        self.template = _CoveringTemplate()
+                        self._rebind_to_buffer()
+                        FreeCADGui.Selection.clearSelection()
+                        self.selection_list = []
+                        self.selected_obj = None
+                        self.selected_sub = None
+                        self._updateSelectionUI()
+                        self.setPicking(True)
+                        return False
+
                 else:
-                    # Edition mode
                     self.template.apply_to(self.obj_to_edit)
-
-                # Recompute the document inside the transaction to catch geometry errors
-                FreeCAD.ActiveDocument.recompute()
-
-                # Save user preferences for next run
-                self._save_user_preferences()
-
-                # Handle the 'continue' workflow
-                if not self.obj_to_edit and self.chk_continue.isChecked():
-                    # Commit the transaction so the current object is atomic in the Undo stack
-                    FreeCAD.ActiveDocument.commitTransaction()
-                    FreeCADGui.Selection.clearSelection()
-                    self.selection_list = []
-                    self.selected_obj = None
-                    self.selected_sub = None
-                    self._updateSelectionUI()
-                    self.setPicking(True)
-                    return False
-
-                # Commit the transaction successfully
-                FreeCAD.ActiveDocument.commitTransaction()
+                    self._save_user_preferences()
+                    doc.removeObject(self.template.buffer.Name)
+                    self.template.destroy()
+                    doc.recompute()
 
             except Exception as e:
-                # Ensure transaction is closed on failure to prevent corruption
                 FreeCAD.ActiveDocument.abortTransaction()
                 import traceback
 
@@ -1697,11 +1725,12 @@ if FreeCAD.GuiUp:
             return True
 
         def reject(self):
-            """Terminates the session and cleans up the template."""
+            """Cancels the session, rolling back the transaction and the buffer with it."""
+            FreeCAD.ActiveDocument.abortTransaction()
             self._cleanup_and_close()
 
         def _cleanup_and_close(self):
-            """Removes temporary observers and the template buffer, then closes the task panel."""
+            """Unregisters observers, drops the template reference, and closes the panel."""
             self._unregister_observer()
             if self.template:
                 self.template.destroy()
@@ -1720,14 +1749,24 @@ class _CoveringTemplate:
     """
 
     def __init__(self, name="CoveringTemplate"):
-
-        # Create the internal buffer object
+        # The buffer is created inside an already-open transaction (opened by BIM_Covering or
+        # by the C++ setEdit mechanism). It will be removed before that transaction commits,
+        # so the transaction optimizer cancels out the create+delete pair and the buffer
+        # never appears in the undo stack.
         self.buffer = Arch.makeCovering(name=name)
 
-        # Ensure the buffer is truly invisible to the user
         if self.buffer.ViewObject:
             self.buffer.ViewObject.ShowInTree = False
             self.buffer.ViewObject.hide()
+
+    def destroy(self):
+        """Drops the Python reference to the buffer.
+
+        The actual C++ object is handled by the transaction system: the optimizer cancels
+        the create+delete pair on commit (accept), and abortTransaction() rolls it back on
+        cancel (reject). This method must never call doc.removeObject() directly.
+        """
+        self.buffer = None
 
     def _get_transferable_props(self, obj):
         """Returns a list of properties that can be safely copied."""
@@ -1769,16 +1808,3 @@ class _CoveringTemplate:
                     if path == prop:
                         target.setExpression(prop, expr)
                         break
-
-    def destroy(self):
-        """Safely removes the buffer from the document."""
-        try:
-            if self.buffer:
-                doc = self.buffer.Document
-                if doc and doc.getObject(self.buffer.Name):
-                    doc.removeObject(self.buffer.Name)
-        except (ReferenceError, RuntimeError):
-            # Object might already be deleted by a transaction rollback
-            pass
-        finally:
-            self.buffer = None
