@@ -23,13 +23,19 @@ class TestArchCovering(TestArchBase.TestArchBase):
         self.box.Length = 1000.0
         self.box.Width = 1000.0
         self.box.Height = 1000.0
-        # Isolate tests by saving and restoring the global parameter
+        # Isolate tests by saving and restoring global parameters.
+        # CoveringRotation must be saved/restored because empirical use of the
+        # rotation feature can leave a non-zero preference that breaks tests
+        # which do not explicitly set covering.Rotation = 0.
         self.original_joint_width = params.get_param_arch("CoveringJoint", ret_default=False)
+        self.original_rotation = params.get_param_arch("CoveringRotation", ret_default=False)
+        params.set_param_arch("CoveringRotation", 0)
         self.document.recompute()
 
     def tearDown(self):
-        # Restore the global parameter to prevent test pollution
+        # Restore the global parameters to prevent test pollution
         params.set_param_arch("CoveringJoint", self.original_joint_width)
+        params.set_param_arch("CoveringRotation", self.original_rotation)
         super().tearDown()
 
     def test_makeCovering_creation(self):

@@ -243,35 +243,47 @@ class TestArchCoveringGui(TestArchBaseGui.TestArchBaseGui):
         self.assertAlmostEqual(dir_u.y, 0.0, places=5)
         self.assertAlmostEqual(dir_v.y, 0.005, places=5)
 
-        # Case B: Rotated Covering
-        # Rotate the covering 45 degrees around Z.
-        # Note: We rotate the Covering, but the Base (Box) remains static (0 deg).
-        covering.Placement.Rotation = App.Rotation(App.Vector(0, 0, 1), 45)
-        self.document.recompute()
+        # Case B: Flat Lines vs Shaded consistency on an unrotated covering.
+        # On a horizontal face, obj.Placement has identity rotation after execute().
+        # The Flat Lines inv_pl transform is therefore a no-op, and the two modes
+        # must produce identical direction vectors (both in global space, since local
+        # IS global for a horizontal face).
+        #
+        # The meaningful difference between Flat Lines and Shaded only arises on
+        # non-horizontal faces where obj.Placement.Rotation is non-identity.
+        # That case is covered by the functional 3D-orientation CLI tests.
+        #
+        # Here we verify that when Flat Lines and Shaded agree (identity placement),
+        # the inv_pl branch does not corrupt the vectors.
+        res_flat = vp._compute_texture_mapping(covering, "Flat Lines")
+        self.assertIsNotNone(res_flat, "Flat Lines mapping should succeed")
 
-        # In "Shaded" (Global) mode, the texture follows the Base geometry.
-        # Since the Box didn't rotate, the UV vectors should still be (1,0,0) global.
-        res_global = vp._compute_texture_mapping(covering, "Shaded")
+        dir_u_flat, dir_v_flat, _, _ = res_flat
+
+        # Both modes must agree on an axis-aligned horizontal face
         self.assertAlmostEqual(
-            res_global[0].x,
+            dir_u_flat.x,
             0.005,
             places=5,
-            msg="Shaded mode should track the static Base geometry (Global)",
+            msg="Flat Lines on a horizontal face should match Shaded (identity placement)",
         )
 
-        # In "Flat Lines" (Local) mode, the logic transforms Global vectors into Local space.
-        # Global U=(1,0,0). Object is Rotated 45. Local X is 45 deg from Global X.
-        # Inverse Rotation (-45) is applied to Global U.
-        # Vector (1,0,0) rotated by -45 deg -> (0.707, -0.707, 0)
-        # Scaled by 0.005 -> (0.003535, -0.003535, 0)
-        res_local = vp._compute_texture_mapping(covering, "Flat Lines")
+        # Case C: Tile grid rotation via covering.Rotation property.
+        # This is a separate, user-facing rotation that rotates the tile grid
+        # (and therefore the texture) around the face normal. Unlike Placement.Rotation,
+        # this property is preserved through recompute().
+        covering.Rotation = 45.0
+        self.document.recompute()
 
-        # Check X component
+        # With 45-degree grid rotation: the texture U-vector is rotated 45 deg around Z.
+        # Global U=(1,0,0) rotated by 45 deg -> (cos45, sin45, 0)
+        # Scaled by 1/200 -> (0.003535, 0.003535, 0)
+        res_rotated = vp._compute_texture_mapping(covering, "Shaded")
         self.assertAlmostEqual(
-            res_local[0].x,
+            res_rotated[0].x,
             0.003535,
             places=5,
-            msg="Flat Lines mode should transform vectors into rotated Local space",
+            msg="45-degree Rotation property should rotate the texture U-vector",
         )
 
     def test_texture_scenegraph_structure(self):
