@@ -75,25 +75,6 @@ if FreeCAD.GuiUp:
             """
             properties_list = vobj.PropertiesList
 
-            # Texture properties
-            if not "TextureImage" in properties_list:
-                vobj.addProperty(
-                    "App::PropertyFile",
-                    "TextureImage",
-                    "Visual",
-                    QT_TRANSLATE_NOOP("App::Property", "An image file to map onto each tile"),
-                    locked=True,
-                )
-            if not "TextureScale" in properties_list:
-                vobj.addProperty(
-                    "App::PropertyVector",
-                    "TextureScale",
-                    "Visual",
-                    QT_TRANSLATE_NOOP("App::Property", "The scaling of the texture on each tile"),
-                    locked=True,
-                )
-                vobj.TextureScale = FreeCAD.Vector(1, 1, 0)
-
         def onDocumentRestored(self, vobj):
             self.setProperties(vobj)
 
@@ -310,10 +291,6 @@ if FreeCAD.GuiUp:
             # Let the parent class handle its properties first.
             super().onChanged(vobj, prop)
 
-            # Apply the texture logic after the parent is done.
-            if prop in ["TextureImage", "TextureScale"]:
-                self.updateTexture(vobj.Object)
-
         def updateTexture(self, obj):
             """Configures and applies the texture to the object's scene graph.
 
@@ -348,10 +325,10 @@ if FreeCAD.GuiUp:
             if not hasattr(self, "texture"):
                 self.texture = None
 
-            # If we are loading the file and "Shape" loaded before "TextureImage", vobj.TextureImage
+            # If we are loading the file and "Shape" loaded before "TextureImage", obj.TextureImage
             # will raise AttributeError. We simply return. The loader will call updateData again
             # when it reaches "TextureImage".
-            if not hasattr(vobj, "TextureImage") or not hasattr(vobj, "TextureScale"):
+            if not hasattr(obj, "TextureImage") or not hasattr(obj, "TextureScale"):
                 return
 
             import pivy.coin as coin
@@ -385,7 +362,7 @@ if FreeCAD.GuiUp:
 
             # Performance guard: If the user has not set a texture and the scene graph is
             # already clean, exit immediately to avoid unnecessary processing.
-            if not vobj.TextureImage and not found_indices:
+            if not obj.TextureImage and not found_indices:
                 return
 
             # Clean up existing texture nodes from FlatRoot.
@@ -396,7 +373,7 @@ if FreeCAD.GuiUp:
             self.texture = None
 
             # If the property was cleared, the scene is now synchronized and we can exit.
-            if not vobj.TextureImage or not os.path.exists(vobj.TextureImage):
+            if not obj.TextureImage or not os.path.exists(obj.TextureImage):
                 return
 
             mapping = self._compute_texture_mapping(obj, vobj.DisplayMode)
@@ -409,11 +386,11 @@ if FreeCAD.GuiUp:
             texture_node = coin.SoTexture2()
 
             # Load Image
-            img = self._get_cached_image(vobj.TextureImage)
+            img = self._get_cached_image(obj.TextureImage)
             if img:
                 texture_node.image = img
             else:
-                texture_node.filename = vobj.TextureImage
+                texture_node.filename = obj.TextureImage
 
             texture_node.model = coin.SoTexture2.REPLACE
 
@@ -586,8 +563,8 @@ if FreeCAD.GuiUp:
                 calc_v = rot.multVec(calc_v)
 
             # Apply texture scaling
-            scale_u = vobj.TextureScale.x if vobj.TextureScale.x != 0 else 1.0
-            scale_v = vobj.TextureScale.y if vobj.TextureScale.y != 0 else 1.0
+            scale_u = obj.TextureScale.x if obj.TextureScale.x != 0 else 1.0
+            scale_v = obj.TextureScale.y if obj.TextureScale.y != 0 else 1.0
 
             # Calculate period (tile + joint)
             period_u = (obj.TileLength.Value + joint_width) * scale_u
@@ -1199,16 +1176,12 @@ if FreeCAD.GuiUp:
             # Trigger handler to update enabled state of custom box
             self.onStaggerChanged(self.combo_stagger.currentIndex())
 
-            # Visuals (only applies if editing an existing object)
-            if self.obj_to_edit and hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
-                self.le_tex_image.setText(self.obj_to_edit.ViewObject.TextureImage)
+            # Visuals
+            if self.template.buffer.TextureImage:
+                self.le_tex_image.setText(self.template.buffer.TextureImage)
 
-            # Load texture scale values from the view object
-            vobj = (
-                self.obj_to_edit.ViewObject if self.obj_to_edit else self.template.buffer.ViewObject
-            )
-            self.sb_tex_scale_u.setValue(vobj.TextureScale.x)
-            self.sb_tex_scale_v.setValue(vobj.TextureScale.y)
+            self.sb_tex_scale_u.setValue(self.template.buffer.TextureScale.x)
+            self.sb_tex_scale_v.setValue(self.template.buffer.TextureScale.y)
 
         def browseTexture(self):
             fn = QtGui.QFileDialog.getOpenFileName(
@@ -1226,7 +1199,7 @@ if FreeCAD.GuiUp:
             )[0]
             if fn:
                 self.le_pat.setText(fn)
-                self.updatePatterns(fn)  # Call helper
+                self.updatePatterns(fn)
 
         def updatePatterns(self, filename):
             self.combo_pattern.clear()
@@ -1627,12 +1600,8 @@ if FreeCAD.GuiUp:
                 obj.PatternName = self.combo_pattern.currentText()
                 obj.PatternScale = self.sb_scale_hatch.value()
 
-            # Sync visual multipliers back to the view object
-            vobj = (
-                self.obj_to_edit.ViewObject if self.obj_to_edit else self.template.buffer.ViewObject
-            )
-            vobj.TextureImage = self.le_tex_image.text()
-            vobj.TextureScale = FreeCAD.Vector(
+            obj.TextureImage = self.le_tex_image.text()
+            obj.TextureScale = FreeCAD.Vector(
                 self.sb_tex_scale_u.value(), self.sb_tex_scale_v.value(), 0
             )
 
@@ -1672,9 +1641,6 @@ if FreeCAD.GuiUp:
                 # Open a new transaction for the document modification
                 FreeCAD.ActiveDocument.openTransaction("Covering")
 
-                # Prepare visual properties
-                tex_image = self.le_tex_image.text()
-
                 if not self.obj_to_edit:
                     # Creation mode
 
@@ -1694,17 +1660,9 @@ if FreeCAD.GuiUp:
 
                             # Copy properties from the template buffer
                             self.template.apply_to(new_obj)
-
-                            # Apply texture to view object
-                            if hasattr(new_obj.ViewObject, "TextureImage"):
-                                new_obj.ViewObject.TextureImage = tex_image
                 else:
                     # Edition mode
                     self.template.apply_to(self.obj_to_edit)
-
-                    # Apply texture to view object
-                    if hasattr(self.obj_to_edit.ViewObject, "TextureImage"):
-                        self.obj_to_edit.ViewObject.TextureImage = tex_image
 
                 # Recompute the document inside the transaction to catch geometry errors
                 FreeCAD.ActiveDocument.recompute()

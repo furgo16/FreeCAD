@@ -214,10 +214,24 @@ class _Covering(ArchComponent.Component):
                 0,
             ),
             (
-                "App::PropertyFile",
+                "App::PropertyFileIncluded",
+                "TextureImage",
+                "Visual",
+                "An image file to map onto each tile. The file is embedded in the document.",
+                None,
+            ),
+            (
+                "App::PropertyVector",
+                "TextureScale",
+                "Visual",
+                "Scaling of the texture on each tile (X=U, Y=V). The Z component is ignored.",
+                None,
+            ),
+            (
+                "App::PropertyFileIncluded",
                 "PatternFile",
                 "Pattern",
-                "The PAT file to use for hatching",
+                "The PAT file to use for hatching. The file is embedded in the document.",
                 None,
             ),
             (
@@ -261,6 +275,11 @@ class _Covering(ArchComponent.Component):
                 # Apply defined default values
                 if default is not None:
                     setattr(obj, name, default)
+
+        # TextureScale default cannot be expressed as a plain value in the schema tuple,
+        # so it is set here after the loop.
+        if "TextureScale" in obj.PropertiesList and obj.TextureScale.Length == 0:
+            obj.TextureScale = FreeCAD.Vector(1, 1, 0)
 
         # Property status configuration (Read-Only fields)
         obj.setEditorMode("NetArea", 1)
