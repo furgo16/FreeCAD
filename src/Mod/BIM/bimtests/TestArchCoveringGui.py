@@ -140,25 +140,40 @@ class TestArchCoveringGui(TestArchBaseGui.TestArchBaseGui):
         self.assertIsNotNone(self.document.getObject(self.panel.template.buffer.Name))
 
     def test_mode_switching_ux(self):
-        """Verify that thickness is disabled when entering pattern modes."""
+        """Verify that mode switching updates the stacked page and template FinishMode."""
         self.printTestMessage("mode switching UX...")
         self.panel = ArchCoveringGui.ArchCoveringTaskPanel()
 
-        # Initial state: Solid Tiles (index 0)
+        # Solid Tiles (index 0): tiles page, thickness is meaningful and enabled
         self.panel.combo_mode.setCurrentIndex(0)
-        self.assertTrue(self.panel.sb_thick.isEnabled())
+        self.assertEqual(self.panel.geo_stack.currentIndex(), 0)
+        self.assertEqual(self.panel.template.buffer.FinishMode, "Solid Tiles")
+        self.assertTrue(
+            self.panel.sb_thick.isEnabled(), "Thickness must be editable in Solid Tiles mode"
+        )
 
-        # Switch to Parametric Pattern (index 1)
+        # Parametric Pattern (index 1): also uses tiles page, thickness controls substrate depth
         self.panel.combo_mode.setCurrentIndex(1)
-        self.assertFalse(self.panel.sb_thick.isEnabled())
-        self.assertEqual(self.panel.sb_thick.property("rawValue"), 0.0)
+        self.assertEqual(self.panel.geo_stack.currentIndex(), 0)
+        self.assertEqual(self.panel.template.buffer.FinishMode, "Parametric Pattern")
+        self.assertTrue(
+            self.panel.sb_thick.isEnabled(),
+            "Thickness controls substrate depth in Parametric Pattern mode",
+        )
 
-        # Switch back to Solid Tiles
-        self.panel.combo_mode.setCurrentIndex(0)
-        self.assertTrue(self.panel.sb_thick.isEnabled())
+        # Monolithic (index 2): dedicated page
+        self.panel.combo_mode.setCurrentIndex(2)
+        self.assertEqual(self.panel.geo_stack.currentIndex(), 2)
+        self.assertEqual(self.panel.template.buffer.FinishMode, "Monolithic")
 
-        # Should restore the previous default thickness
-        self.assertGreater(self.panel.sb_thick.property("rawValue"), 0.0)
+        # Hatch Pattern (index 3): hatch page, visuals disabled
+        self.panel.combo_mode.setCurrentIndex(3)
+        self.assertEqual(self.panel.geo_stack.currentIndex(), 1)
+        self.assertEqual(self.panel.template.buffer.FinishMode, "Hatch Pattern")
+        self.assertFalse(
+            self.panel.vis_widget.isEnabled(),
+            "Texture visuals must be disabled in Hatch Pattern mode",
+        )
 
     def test_cleanup_removes_template(self):
         """Ensure the template object is deleted on close/reject."""

@@ -501,32 +501,33 @@ if FreeCAD.GuiUp:
 
             # We don't need the full Boolean cut logic here, just the perimeter offset
             # because texture mapping is planar and ignores holes.
+            # Note: makeOffset2D returns a new shape; it does not modify in-place.
+            # Guard against degenerate offsets (face too small) which raise CADKernelError.
             total_offset = border_setback + joint_width
             if total_offset > 0:
-                effective_face.makeOffset2D(-total_offset)
+                try:
+                    effective_face = base_face.makeOffset2D(-total_offset)
+                except Exception:
+                    # Offset collapsed the face (e.g. setback larger than face). Fall back to
+                    # the original face so texture mapping still uses a valid geometry basis.
+                    effective_face = base_face.copy()
 
-            # Replicate the object's frame resolution logic
-            import DraftGeomUtils
-
-            center_point = base_face.BoundBox.Center
-
-            # Normal
-            u_p, v_p = base_face.Surface.parameter(center_point)
-            normal = FreeCAD.Vector(base_face.normalAt(u_p, v_p))
-            normal.normalize()
-
-            # U-Vector (aligned to object X)
-            obj_rot = obj.Placement.Rotation
-            u_ref = obj_rot.multVec(FreeCAD.Vector(1, 0, 0))
-            u_vec = u_ref - normal * u_ref.dot(normal)
-            if u_vec.Length < 1e-7:
-                v_ref = obj_rot.multVec(FreeCAD.Vector(0, 1, 0))
-                u_vec = v_ref - normal * v_ref.dot(normal)
+            # Replicate the object's frame resolution logic.
+            # Use the face's own canonical UV basis (same as ArchCovering._get_layout_frame),
+            # not the covering object's Placement rotation. Deriving u_vec from obj.Placement
+            # would make the texture basis track the covering's orientation, which cancels
+            # the Flat Lines inverse-rotation transform and breaks rotated objects.
+            u_vec, v_vec, normal, center_point = Arch.getFaceUV(base_face)
+            if base_face.Orientation == "Reversed":
+                normal = -normal
+            for vec in [u_vec, v_vec]:
+                vals = [abs(vec.x), abs(vec.y), abs(vec.z)]
+                max_val = max(vals)
+                if max_val > 0.1 and vec[vals.index(max_val)] < 0:
+                    vec.multiply(-1)
             u_vec.normalize()
-
-            # V-Vector
-            v_vec = normal.cross(u_vec)
-            v_vec.normalize()
+            v_vec = normal.cross(u_vec).normalize()
+            u_vec = v_vec.cross(normal).normalize()
 
             # Calculate origin
             if obj.TileAlignment == "Custom":
