@@ -1388,8 +1388,19 @@ if FreeCAD.GuiUp:
             # Determine rotation angle between the working plane U axis and the face local frame.
             wp_u_proj = wp.u - normal * wp.u.dot(normal)
             if wp_u_proj.Length > 1e-7:
-                angle = DraftVecUtils.angle(u_basis, wp_u_proj, normal)
-                self.sb_rot.setProperty("value", math.degrees(angle))
+                angle_deg = math.degrees(DraftVecUtils.angle(u_basis, wp_u_proj, normal))
+
+                # Write to the buffer directly, mirroring the AlignmentOffset pattern below.
+                # setProperty("value", float) on a Gui::QuantitySpinBox updates the visual
+                # display but does NOT update the widget's internal Quantity object, so a
+                # bare-float setProperty is not reliably picked up by _sync_ui_to_target.
+                # Writing to the buffer first guarantees the value survives accept().
+                self.template.buffer.Rotation = angle_deg
+
+                # Sync the display so the user sees what was applied.
+                self.sb_rot.setProperty(
+                    "value", FreeCAD.Units.Quantity(angle_deg, FreeCAD.Units.Angle)
+                )
 
             # Project the working plane origin onto the face to determine the offset.
             pt_on_face = DraftGeomUtils.project_point_on_plane(wp.position, center, normal)
