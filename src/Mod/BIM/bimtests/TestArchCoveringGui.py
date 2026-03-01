@@ -17,17 +17,37 @@ from bimtests import TestArchBaseGui
 class TestArchCoveringGui(TestArchBaseGui.TestArchBaseGui):
     """GUI-side tests for Arch Covering Task Panel logic and workflows."""
 
+    # All params that _save_user_preferences() may write. Saving and restoring these
+    # using the hardcoded defaults (ret_default=True) ensures every test starts from
+    # a clean, known state regardless of what prior tests or sessions stored.
+    _COVERING_PARAMS = [
+        "CoveringLength",
+        "CoveringWidth",
+        "CoveringThickness",
+        "CoveringJoint",
+        "CoveringRotation",
+        "CoveringFinishMode",
+        "CoveringAlignment",
+    ]
+
     def setUp(self):
         super().setUp()
         self.box = self.document.addObject("Part::Box", "BaseBox")
         self.document.recompute()
         self.panel = None
-        # Isolate tests by saving and restoring the global parameter
-        self.original_joint_width = params.get_param_arch("CoveringJoint", ret_default=False)
+        # Snapshot the hardcoded defaults and immediately write them into the param
+        # store so that every test begins with the same known values, even if a prior
+        # test (or a prior run of the suite) left corrupted values behind.
+        self._saved_params = {}
+        for k in self._COVERING_PARAMS:
+            self._saved_params[k] = params.get_param_arch(k, ret_default=False)
+            params.set_param_arch(k, params.get_param_arch(k, ret_default=True))
 
     def tearDown(self):
-        # Restore the global parameter to prevent test pollution
-        params.set_param_arch("CoveringJoint", self.original_joint_width)
+        # Restore the param store to its pre-test state so the test does not
+        # permanently alter the user's preferences.
+        for k, v in self._saved_params.items():
+            params.set_param_arch(k, v)
         # Ensure any open task panel is closed and the template is removed
         if self.panel:
             self.panel.reject()
@@ -214,11 +234,16 @@ class TestArchCoveringGui(TestArchBaseGui.TestArchBaseGui):
         # 1000x1000 face, 0 rotation
         base = (self.box, ["Face6"])  # Face6 is Top (Z=1000)
         covering = Arch.makeCovering(base)
+        # Recompute first so execute() runs with valid default dimensions (no warnings).
+        # Then set the test-specific values: _compute_texture_mapping reads properties
+        # directly and does not trigger a recompute, so these are stable at call time.
+        # JointWidth=0 is intentional for clean period math (period = TileLength + 0 = 200)
+        # but would trigger JOINT_TOO_SMALL if seen by execute(), hence the ordering.
+        self.document.recompute()
         covering.TileLength = 200.0
         covering.TileWidth = 200.0
         covering.JointWidth = 0.0
         covering.Rotation = 0.0
-        self.document.recompute()
 
         # Access the ViewProvider Proxy
         vp = covering.ViewObject.Proxy
