@@ -1625,11 +1625,25 @@ if FreeCAD.GuiUp:
             else:
                 obj.TileAlignment = self.combo_align.currentText()
 
+            # Preserve any dot-path expressions (e.g. "AlignmentOffset.x") that
+            # ExpressionBinding wrote to the buffer when the user entered them via
+            # the f(x) button. Writing a plain Vector clears those expressions, so
+            # we snapshot them first and re-apply them after the write.
+            _ao_exprs = {
+                path: expr
+                for path, expr in getattr(obj, "ExpressionEngine", [])
+                if path in ("AlignmentOffset.x", "AlignmentOffset.y")
+            }
             obj.AlignmentOffset = FreeCAD.Vector(
                 self.sb_u_off.property("value").Value,
                 self.sb_v_off.property("value").Value,
                 0.0,
             )
+            for path, expr in _ao_exprs.items():
+                try:
+                    obj.setExpression(path, expr)
+                except Exception:
+                    pass
 
             # Sync file paths
             # PropertyFileIncluded raises OSError if you assign the path it already holds
@@ -1817,18 +1831,28 @@ class _CoveringTemplate:
         """Initializes the buffer with values and expressions from a source object."""
         for prop in self._get_transferable_props(source):
             setattr(self.buffer, prop, getattr(source, prop))
-            if hasattr(source, "ExpressionEngine"):
-                for path, expr in source.ExpressionEngine:
-                    if path == prop:
-                        self.buffer.setExpression(prop, expr)
-                        break
+
+        # Transfer all expressions in a second pass, including dot-path sub-property
+        # expressions such as "AlignmentOffset.x" and "AlignmentOffset.y". These are
+        # skipped by a prop == path comparison in the loop above because the path
+        # contains a dot and never matches a top-level property name.
+        if hasattr(source, "ExpressionEngine"):
+            for path, expr in source.ExpressionEngine:
+                try:
+                    self.buffer.setExpression(path, expr)
+                except Exception:
+                    pass
 
     def apply_to(self, target):
         """Transfers the buffer state (values and expressions) to a target object."""
         for prop in self._get_transferable_props(self.buffer):
             setattr(target, prop, getattr(self.buffer, prop))
-            if hasattr(self.buffer, "ExpressionEngine"):
-                for path, expr in self.buffer.ExpressionEngine:
-                    if path == prop:
-                        target.setExpression(prop, expr)
-                        break
+
+        # Transfer all expressions in a second pass, including dot-path sub-property
+        # expressions such as "AlignmentOffset.x" and "AlignmentOffset.y".
+        if hasattr(self.buffer, "ExpressionEngine"):
+            for path, expr in self.buffer.ExpressionEngine:
+                try:
+                    target.setExpression(path, expr)
+                except Exception:
+                    pass
