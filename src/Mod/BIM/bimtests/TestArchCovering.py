@@ -120,11 +120,11 @@ class TestArchCovering(TestArchBase.TestArchBase):
     def test_ifc_predefined_type(self):
         """Verify the IFC Predefined Type property is available and correct."""
         covering = Arch.makeCovering()
-        self.assertTrue(hasattr(covering, "IfcPredefinedType"))
+        self.assertTrue(hasattr(covering, "PredefinedType"))
 
         # Test setting a valid enumeration value
-        covering.IfcPredefinedType = "CLADDING"
-        self.assertEqual(covering.IfcPredefinedType, "CLADDING")
+        covering.PredefinedType = "CLADDING"
+        self.assertEqual(covering.PredefinedType, "CLADDING")
 
     def test_rotation_and_alignment_persistence(self):
         """Verify that new objects pick up current user preferences."""

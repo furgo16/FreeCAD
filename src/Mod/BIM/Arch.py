@@ -2476,6 +2476,6 @@ def makeCovering(baseobj=None, name=None):
     if baseobj:
         covering.Base = baseobj
     covering.IfcType = "Covering"
-    covering.IfcPredefinedType = "FLOORING"
+    covering.PredefinedType = "FLOORING"
 
     return covering
