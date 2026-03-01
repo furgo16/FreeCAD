@@ -998,10 +998,14 @@ if FreeCAD.GuiUp:
             The widget self-registers into self._bound_spinboxes so that _rebind_to_buffer()
             always has a complete inventory without manual maintenance.
 
-            ExpressionBinding.bind() populates the widget's initial value from the buffer
-            automatically for scalar properties. The initial_value parameter exists only for
-            dot-path sub-properties (e.g. "AlignmentOffset.x") where bind() may not resolve
-            the value — pass an explicit FreeCAD.Units.Quantity in those cases.
+            ExpressionBinding.bind() does not reliably populate the widget's display
+            synchronously — it may fire asynchronously via Qt signals, meaning the widget
+            can still show 0 when _sync_ui_to_target() reads it on accept(). We therefore
+            always set the initial value explicitly before binding.
+
+            For scalar properties, the value is read from the buffer via getattr().
+            For dot-path sub-properties (e.g. "AlignmentOffset.x"), getattr() cannot
+            resolve sub-components, so the caller must supply initial_value explicitly.
 
             Parameters
             ----------
@@ -1010,13 +1014,15 @@ if FreeCAD.GuiUp:
                 (e.g. "AlignmentOffset.x").
             tooltip : str, optional
             initial_value : FreeCAD.Units.Quantity, optional
-                Explicit initial value. Use only when prop_name is a dot-path.
+                Explicit initial value. Required when prop_name contains a dot.
             """
             sb = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
             if tooltip:
                 sb.setToolTip(translate("Arch", tooltip))
             if initial_value is not None:
                 sb.setProperty("value", initial_value)
+            elif "." not in prop_name:
+                sb.setProperty("value", getattr(self.template.buffer, prop_name))
             FreeCADGui.ExpressionBinding(sb).bind(self.template.buffer, prop_name)
             self._bound_spinboxes.append((sb, prop_name))
             return sb
@@ -1225,7 +1231,7 @@ if FreeCAD.GuiUp:
             )[0]
             if fn:
                 self.le_pat.setText(fn)
-                self.updatePatterns(fn)
+                self.updatePatterns(fn)  # Call helper
 
         def updatePatterns(self, filename):
             self.combo_pattern.clear()
@@ -1634,6 +1640,7 @@ if FreeCAD.GuiUp:
                 obj.PatternName = self.combo_pattern.currentText()
                 obj.PatternScale = self.sb_scale_hatch.value()
 
+            # Sync visual properties to the document object
             obj.TextureImage = self.le_tex_image.text()
             obj.TextureScale = FreeCAD.Vector(
                 self.sb_tex_scale_u.value(), self.sb_tex_scale_v.value(), 0
@@ -1725,8 +1732,22 @@ if FreeCAD.GuiUp:
             return True
 
         def reject(self):
-            """Cancels the session, rolling back the transaction and the buffer with it."""
-            FreeCAD.ActiveDocument.abortTransaction()
+            """Cancels the session and removes the buffer from the document.
+
+            In normal flow an open transaction exists and abortTransaction() rolls the buffer
+            back automatically. However the panel may be constructed without a transaction
+            (e.g. directly in tests). In that case abortTransaction() is a no-op and we must
+            remove the buffer explicitly so no phantom object is left behind.
+            """
+            doc = FreeCAD.ActiveDocument
+            doc.abortTransaction()
+            if self.template and self.template.buffer:
+                try:
+                    if doc.getObject(self.template.buffer.Name):
+                        doc.removeObject(self.template.buffer.Name)
+                except (ReferenceError, RuntimeError):
+                    pass
+                self.template.buffer = None
             self._cleanup_and_close()
 
         def _cleanup_and_close(self):
