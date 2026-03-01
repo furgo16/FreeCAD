@@ -374,9 +374,9 @@ class _Covering(ArchComponent.Component):
             ),
             (
                 "App::PropertyEnumeration",
-                "IfcPredefinedType",
-                "IFC",
-                "The specific type of covering",
+                "PredefinedType",
+                "IFC Attributes",
+                "The specific IFC subtype of this covering. Exported as IfcCovering.PredefinedType.",
                 [
                     "FLOORING",
                     "CLADDING",
@@ -466,6 +466,21 @@ class _Covering(ArchComponent.Component):
                     doc.UndoMode = old_undo_mode
 
             todo.ToDo.delay(_purge, doc.Name)
+
+    def getExtrusionData(self, obj):
+        """
+        Overrides ArchComponent.getExtrusionData to suppress the parametric
+        extrusion path during IFC export.
+
+        The base implementation assumes obj.Base is a plain Link and calls
+        obj.Base.isDerivedFrom(), which raises AttributeError because Covering
+        uses a LinkSub (a tuple). More importantly, Covering geometry is never
+        a simple extrusion of a single profile — even Monolithic and Parametric
+        Pattern modes produce a placed solid rather than a canonical extrusion.
+        Returning None forces the exporter to use the generic brep path, which
+        correctly serialises the computed Shape for all finish modes.
+        """
+        return None
 
     def onChanged(self, obj, prop):
         """Method called when a property is changed."""
