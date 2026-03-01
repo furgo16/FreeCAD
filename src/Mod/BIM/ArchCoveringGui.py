@@ -21,7 +21,7 @@ def QT_TRANSLATE_NOOP(context, sourceText):
 
 
 if FreeCAD.GuiUp:
-    from PySide import QtGui
+    from PySide import QtGui, QtCore
     import FreeCADGui
     import ArchComponent
     from draftutils import params
@@ -75,6 +75,20 @@ if FreeCAD.GuiUp:
             editor stays synchronized.
             """
             properties_list = vobj.PropertiesList
+
+            if "PickRotationStep" not in properties_list:
+                vobj.addProperty(
+                    "App::PropertyAngle",
+                    "PickRotationStep",
+                    "Interactive",
+                    QT_TRANSLATE_NOOP(
+                        "App::Property",
+                        "Rotation step (degrees) applied per R / Shift+R keypress "
+                        "during interactive grid placement.",
+                    ),
+                    locked=True,
+                )
+                vobj.PickRotationStep = 15.0
 
         def onDocumentRestored(self, vobj):
             self.setProperties(vobj)
@@ -485,8 +499,6 @@ if FreeCAD.GuiUp:
                 try:
                     effective_face = base_face.makeOffset2D(-border_setback)
                 except Exception:
-                    # Offset collapsed the face (e.g. setback larger than face). Fall back to
-                    # the original face so texture mapping still uses a valid geometry basis.
                     effective_face = base_face.copy()
 
             # Replicate the object's frame resolution logic.
@@ -942,12 +954,15 @@ if FreeCAD.GuiUp:
                     "Arch", "Use a manually picked 3D point or match the current Working Plane"
                 )
             )
-            self.btn_pick = QtGui.QPushButton(translate("Arch", "Pick Origin"))
+            self.btn_pick = QtGui.QPushButton(translate("Arch", "Interactive"))
             self.btn_pick.setCheckable(True)
             self.btn_pick.setToolTip(
                 translate(
                     "Arch",
-                    "Enter interactive mode to visually slide the grid origin to a specific 3D point",
+                    "Enter interactive mode to visually place the grid origin and rotate the grid. "
+                    "Click to finish and set the origin. Optionally press R / Shift+R to rotate "
+                    "the tile preview by the PickRotationStep angle (configurable in the View "
+                    "properties).",
                 )
             )
             self.btn_match_wp = QtGui.QPushButton(translate("Arch", "Match Working Plane"))
@@ -1429,6 +1444,26 @@ if FreeCAD.GuiUp:
             self.sb_v_off.setProperty("value", FreeCAD.Units.Quantity(v_off, FreeCAD.Units.Length))
             self.radio_custom.setChecked(True)
 
+        class _PickShortcutFilter(QtCore.QObject):
+            """
+            Qt event filter that intercepts the R key during interactive grid placement.
+
+            Installed on all task panel form widgets so that R / Shift+R rotates the
+            tile wireframe regardless of which widget currently has keyboard focus,
+            without interfering with normal text entry in spinboxes or line edits.
+            """
+
+            def __init__(self, handler):
+                super().__init__()
+                self._handler = handler
+
+            def eventFilter(self, watched, event):
+                if event.type() == QtCore.QEvent.KeyPress:
+                    if event.text().upper() == "R":
+                        self._handler(shift=bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+                        return True  # Consumed — do not pass to the focused widget
+                return False
+
         def onPickOrigin(self, state):
             """Initializes or terminates the interactive snapper loop."""
             if state:
@@ -1448,6 +1483,15 @@ if FreeCAD.GuiUp:
 
                 self._cached_basis = self.template.buffer.Proxy._get_layout_frame(base_face)
 
+                # Seed the incremental rotation counter from the spinbox rather than
+                # the buffer: ExpressionBinding may not have flushed the spinbox value
+                # back to the buffer yet if the user typed a value and immediately clicked
+                # Interactive without first pressing Tab or Enter.
+                try:
+                    self._pick_rotation_deg = self.sb_rot.property("value").Value
+                except Exception:
+                    self._pick_rotation_deg = self.template.buffer.Rotation.Value
+
                 # Setup the lead-tile box tracker.
                 import draftguitools.gui_trackers as trackers
 
@@ -1456,6 +1500,34 @@ if FreeCAD.GuiUp:
                 self.tracker.width(self.template.buffer.TileWidth.Value)
                 self.tracker.height(self.template.buffer.TileThickness.Value)
                 self.tracker.on()
+
+                # Install a Qt event filter to intercept the R key across all form widgets.
+                # Coin3D's SoKeyboardEvent is not delivered when a Qt widget has focus,
+                # so the event filter is the only reliable interception point.
+                def _rotation_handler(shift=False):
+                    try:
+                        step = self.template.buffer.ViewObject.PickRotationStep.Value
+                    except Exception:
+                        step = 15.0
+                    if shift:
+                        step = -step
+                    self._pick_rotation_deg = (
+                        getattr(self, "_pick_rotation_deg", 0.0) + step
+                    ) % 360.0
+                    self.template.buffer.Rotation = self._pick_rotation_deg
+                    self.sb_rot.setProperty(
+                        "value",
+                        FreeCAD.Units.Quantity(self._pick_rotation_deg, FreeCAD.Units.Angle),
+                    )
+                    if hasattr(self, "pt"):
+                        self.onMouseMove(self.pt, None)
+
+                # Install on the application instance so the filter intercepts R
+                # regardless of which child widget has keyboard focus. A per-widget
+                # filter on self.form only sees events on the container, not on focused
+                # children such as spinboxes.
+                self._shortcut_filter = self._PickShortcutFilter(_rotation_handler)
+                QtGui.QApplication.instance().installEventFilter(self._shortcut_filter)
 
                 # Start the interaction loop using a view callback to keep the task panel active.
                 self._view = FreeCADGui.ActiveDocument.ActiveView
@@ -1520,10 +1592,25 @@ if FreeCAD.GuiUp:
                     self.template.buffer.TileThickness.Value,
                 )
 
+                # Build the final rotation: face frame composed with any pick rotation.
+                base_rot = FreeCAD.Rotation(u_basis, v_basis, normal, "XYZ")
+                extra_deg = getattr(self, "_pick_rotation_deg", 0.0)
+                if extra_deg:
+                    extra_rot = FreeCAD.Rotation(normal, extra_deg)
+                    final_rot = extra_rot.multiply(base_rot)
+                else:
+                    final_rot = base_rot
+
+                # Derive the rotated u/v axes so the anchor offset uses the visually
+                # correct directions. Without this, the bottom-left corner drifts away
+                # from the cursor when a pick rotation is applied.
+                u_rotated = final_rot.multVec(FreeCAD.Vector(1, 0, 0))
+                v_rotated = final_rot.multVec(FreeCAD.Vector(0, 1, 0))
+
                 # Apply an offset so the cursor tracks the bottom-left corner of the box.
-                delta = (u_basis * (l / 2.0)) + (v_basis * (w / 2.0)) + (normal * (t / 2.0))
+                delta = (u_rotated * (l / 2.0)) + (v_rotated * (w / 2.0)) + (normal * (t / 2.0))
                 self.tracker.pos(point + delta)
-                self.tracker.setRotation(FreeCAD.Rotation(u_basis, v_basis, normal, "XYZ"))
+                self.tracker.setRotation(final_rot)
 
         def onPointPicked(self, point, obj=None):
             """Calculates the final alignment offset and restores the interface."""
@@ -1558,6 +1645,11 @@ if FreeCAD.GuiUp:
                 del self.tracker
             if hasattr(self, "_cached_basis"):
                 del self._cached_basis
+            if hasattr(self, "_pick_rotation_deg"):
+                del self._pick_rotation_deg
+            if hasattr(self, "_shortcut_filter"):
+                QtGui.QApplication.instance().removeEventFilter(self._shortcut_filter)
+                del self._shortcut_filter
 
             # Restore the UI and object state.
             self.geo_widget.setEnabled(True)
@@ -1787,6 +1879,9 @@ if FreeCAD.GuiUp:
 
         def _cleanup_and_close(self):
             """Unregisters observers, drops the template reference, and closes the panel."""
+            # If the panel is closed while interactive mode is active (e.g. Cancel button),
+            # ensure the event callback, tracker, and event filter are all torn down cleanly.
+            self._cleanup_snapper()
             self._unregister_observer()
             if self.template:
                 self.template.destroy()
