@@ -9,6 +9,7 @@ import os
 import FreeCAD
 import Part
 import Arch
+import ArchCovering
 
 
 def translate(context, sourceText, disambiguation=None, n=-1):
@@ -469,18 +470,20 @@ if FreeCAD.GuiUp:
             if not base_face:
                 return None
 
-            # Replicate the effective face logic from the object to ensure alignment
-            # Texture must start at the same 'inner corner' as the physical tiles
+            # Replicate _apply_boundaries: inset by BorderSetback only, NOT joint_width.
+            # The bounding box of effective_face is used by getFaceGridOrigin to locate
+            # preset alignment corners. It must match the face used by the geometry engine
+            # exactly, or the texture origin will be offset from the tile origin by the
+            # joint width for non-BottomLeft presets.
             effective_face = base_face.copy()
             joint_width = obj.JointWidth.Value if hasattr(obj, "JointWidth") else 0.0
             border_setback = obj.BorderSetback.Value
 
             # Note: makeOffset2D returns a new shape; it does not modify in-place.
             # Guard against degenerate offsets (face too small) which raise CADKernelError.
-            total_offset = border_setback + joint_width
-            if total_offset > 0:
+            if border_setback > 0:
                 try:
-                    effective_face = base_face.makeOffset2D(-total_offset)
+                    effective_face = base_face.makeOffset2D(-border_setback)
                 except Exception:
                     # Offset collapsed the face (e.g. setback larger than face). Fall back to
                     # the original face so texture mapping still uses a valid geometry basis.
@@ -505,22 +508,16 @@ if FreeCAD.GuiUp:
                     center_point + u_vec * obj.AlignmentOffset.x + v_vec * obj.AlignmentOffset.y
                 )
             else:
-                origin = Arch.getFaceGridOrigin(
+                origin = ArchCovering.getAlignedGridOrigin(
                     effective_face,
                     center_point,
                     u_vec,
                     v_vec,
                     obj.TileAlignment,
+                    obj.TileLength.Value,
+                    obj.TileWidth.Value,
                     obj.AlignmentOffset,
                 )
-
-                if obj.TileAlignment == "Center":
-                    origin = origin - u_vec * (obj.TileLength.Value / 2.0)
-                    origin = origin - v_vec * (obj.TileWidth.Value / 2.0)
-                elif "Right" in obj.TileAlignment:
-                    origin = origin + u_vec * joint_width
-                elif "Top" in obj.TileAlignment:
-                    origin = origin + v_vec * joint_width
 
             # Apply different logic based on the active DisplayMode
             if display_mode == "Flat Lines":
@@ -1635,13 +1632,19 @@ if FreeCAD.GuiUp:
             )
 
             # Sync file paths
+            # PropertyFileIncluded raises OSError if you assign the path it already holds
+            # (source == destination). Guard both FileIncluded properties against no-op writes.
             if obj.FinishMode == "Hatch Pattern":
-                obj.PatternFile = self.le_pat.text()
+                new_pat = self.le_pat.text()
+                if new_pat != obj.PatternFile:
+                    obj.PatternFile = new_pat
                 obj.PatternName = self.combo_pattern.currentText()
                 obj.PatternScale = self.sb_scale_hatch.value()
 
             # Sync visual properties to the document object
-            obj.TextureImage = self.le_tex_image.text()
+            new_tex = self.le_tex_image.text()
+            if new_tex != obj.TextureImage:
+                obj.TextureImage = new_tex
             obj.TextureScale = FreeCAD.Vector(
                 self.sb_tex_scale_u.value(), self.sb_tex_scale_v.value(), 0
             )

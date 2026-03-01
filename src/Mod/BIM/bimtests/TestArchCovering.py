@@ -7,6 +7,7 @@
 
 import FreeCAD as App
 import Arch
+import ArchCovering
 import Part
 import Draft
 from draftutils import params
@@ -569,7 +570,7 @@ class TestArchCovering(TestArchBase.TestArchBase):
         # 1000x1000 substrate
         substrate = Part.makePlane(1000, 1000)
         u, v, n, c = Arch.getFaceUV(substrate)
-        origin = Arch.getFaceGridOrigin(substrate, c, u, v, alignment="BottomLeft")
+        origin = ArchCovering.getFaceGridOrigin(substrate, c, u, v, alignment="BottomLeft")
 
         # Scenario: 200x200 tiles, 50 mm joint.
         # Step is 250 mm. 1000/250 = 4 tiles precisely per side. Total = 16.
@@ -680,8 +681,8 @@ class TestArchCovering(TestArchBase.TestArchBase):
         # Pure logic test: verify the locator utility directly
         face = self.box.getSubObject("Face6")
         u, v, n, c = Arch.getFaceUV(face)
-        origin_bl = Arch.getFaceGridOrigin(face, c, u, v, alignment="BottomLeft")
-        origin_c = Arch.getFaceGridOrigin(face, c, u, v, alignment="Center")
+        origin_bl = ArchCovering.getFaceGridOrigin(face, c, u, v, alignment="BottomLeft")
+        origin_c = ArchCovering.getFaceGridOrigin(face, c, u, v, alignment="Center")
         self.assertNotEqual(origin_bl, origin_c, "Grid origin must shift with alignment string.")
 
         # Integration test: verify the physical shift in the result

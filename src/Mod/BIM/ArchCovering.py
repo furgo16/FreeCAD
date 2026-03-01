@@ -36,6 +36,130 @@ if FreeCAD.GuiUp:
     QT_TRANSLATE_NOOP = FreeCAD.Qt.QT_TRANSLATE_NOOP
 
 
+def getFaceGridOrigin(face, center_point, u_vec, v_vec, alignment="Center", offset=None):
+    """
+    Calculates the raw bounding-box vertex of a face that corresponds to the
+    requested alignment preset, optionally shifted by an additional offset.
+
+    This is the low-level building block used by getAlignedGridOrigin.
+    Also useful for tests or callers that need the raw bounding-box vertex.  It
+    returns the point where the bottom-left (0,0) tile corner would land if
+    the grid were anchored without any tile-body correction.
+
+    Parameters
+    ----------
+    face : Part.Face
+    center_point : FreeCAD.Vector
+        Face centre in global space (as returned by getFaceUV).
+    u_vec, v_vec : FreeCAD.Vector
+        Unit vectors of the face's local coordinate system.
+    alignment : str
+        One of "Center", "BottomLeft", "BottomRight", "TopLeft", "TopRight".
+    offset : FreeCAD.Vector or None
+        Additional UV offset applied after the alignment vertex is selected
+        (corresponds to AlignmentOffset on the covering object).
+    """
+    v0 = face.Vertexes[0].Point
+    vec0 = v0.sub(center_point)
+
+    min_u = max_u = vec0.dot(u_vec)
+    min_v = max_v = vec0.dot(v_vec)
+
+    for v in face.Vertexes[1:]:
+        vec_to_vert = v.Point.sub(center_point)
+        proj_u = vec_to_vert.dot(u_vec)
+        proj_v = vec_to_vert.dot(v_vec)
+        if proj_u < min_u:
+            min_u = proj_u
+        if proj_u > max_u:
+            max_u = proj_u
+        if proj_v < min_v:
+            min_v = proj_v
+        if proj_v > max_v:
+            max_v = proj_v
+
+    origin_offset = FreeCAD.Vector(0, 0, 0)
+    if alignment == "Center":
+        mid_u = (min_u + max_u) / 2
+        mid_v = (min_v + max_v) / 2
+        origin_offset = (u_vec * mid_u) + (v_vec * mid_v)
+    elif alignment == "BottomLeft":
+        origin_offset = (u_vec * min_u) + (v_vec * min_v)
+    elif alignment == "BottomRight":
+        origin_offset = (u_vec * max_u) + (v_vec * min_v)
+    elif alignment == "TopLeft":
+        origin_offset = (u_vec * min_u) + (v_vec * max_v)
+    elif alignment == "TopRight":
+        origin_offset = (u_vec * max_u) + (v_vec * max_v)
+
+    if offset:
+        align_shift = (u_vec * offset.x) + (v_vec * offset.y)
+        origin_offset = origin_offset.add(align_shift)
+
+    return center_point.add(origin_offset)
+
+
+def getAlignedGridOrigin(
+    face, center_point, u_vec, v_vec, alignment, tile_length, tile_width, offset=None
+):
+    """
+    Calculates the tiling grid origin so that the *named* corner of a tile
+    coincides with the *named* corner of the face bounding box.
+
+    This is the single authoritative implementation of the alignment-preset
+    semantics shared by the geometry engine (_Covering.execute via
+    _calculate_origin) and the texture mapper (_ViewProviderCovering via
+    _compute_texture_mapping).  Both call sites must use this function so
+    that tile geometry and texture always share the same origin.
+
+    How it works
+    ------------
+    getFaceGridOrigin returns the raw bounding-box vertex, which is where
+    the bottom-left (0,0) tile corner lands by default.  For presets other
+    than BottomLeft we shift the grid so the *correct* tile corner arrives
+    at the face corner instead:
+
+      BottomLeft : no shift — (0,0) corner already at min_u, min_v.
+      BottomRight: shift left  by tile_length so the right  edge reaches max_u.
+      TopLeft    : shift down  by tile_width  so the top    edge reaches max_v.
+      TopRight   : both shifts.
+      Center     : shift by half a tile so a tile centre lands at the face centre.
+
+    The shift uses tile body size (not pitch = size + joint) so the tile
+    corner is flush with the face edge and the joint bleeds outside — the
+    physically correct behaviour at a wall or kerb edge.
+
+    Parameters
+    ----------
+    face : Part.Face
+    center_point : FreeCAD.Vector
+    u_vec, v_vec : FreeCAD.Vector
+    alignment : str
+        One of "Center", "BottomLeft", "BottomRight", "TopLeft", "TopRight".
+    tile_length : float
+        Tile body length in mm (TileLength.Value).
+    tile_width : float
+        Tile body width in mm (TileWidth.Value).
+    offset : FreeCAD.Vector or None
+        Additional UV offset (AlignmentOffset) passed through to
+        getFaceGridOrigin.
+    """
+    origin = getFaceGridOrigin(face, center_point, u_vec, v_vec, alignment, offset)
+
+    if alignment == "Center":
+        origin = origin - u_vec * (tile_length / 2.0)
+        origin = origin - v_vec * (tile_width / 2.0)
+    elif alignment == "BottomRight":
+        origin = origin - u_vec * tile_length
+    elif alignment == "TopLeft":
+        origin = origin - v_vec * tile_width
+    elif alignment == "TopRight":
+        origin = origin - u_vec * tile_length
+        origin = origin - v_vec * tile_width
+
+    return origin
+
+
 class _Covering(ArchComponent.Component):
     """
     A parametric object representing an architectural surface finish.
@@ -437,29 +561,30 @@ class _Covering(ArchComponent.Component):
         The grid origin defines the anchor point (0,0) for the first material unit (tile,
         board, or pattern repetition). The behavior varies based on the TileAlignment property:
 
-        - 'Center': The grid is shifted by half a tile unit (Length/2, Width/2). This
-          ensures that the center of a tile is perfectly aligned with the center of the
-          boundary, rather than a grout intersection.
-        - Corner Presets (e.g., 'BottomLeft', 'TopRight'): The origin is anchored
-          strictly to the boundary corner. The (0,0) tile vertex coincides exactly with
-           the boundary vertex. There are no grout-padding shifts.
+        - 'Center': The grid is shifted so that the centre of a tile coincides with the
+          centre of the boundary, rather than a grout intersection.
+        - Corner Presets ('BottomLeft', 'BottomRight', 'TopLeft', 'TopRight'): The *named*
+          corner of a tile is aligned to the *named* corner of the bounding box.
+          Implemented by getAlignedGridOrigin — see its docstring for the full
+          shift semantics.
         - 'Custom': Boundary-based semantic logic is bypassed. The AlignmentOffset
-          property is treated as an absolute local coordinate relative to the face center.
+          property is treated as an absolute local coordinate relative to the face centre.
         """
         # In Custom mode, the AlignmentOffset is treated as an absolute
         # coordinate relative to the face center.
         if obj.TileAlignment == "Custom":
             return center + u_vec * obj.AlignmentOffset.x + v_vec * obj.AlignmentOffset.y
 
-        origin_3d = Arch.getFaceGridOrigin(
-            effective_face, center, u_vec, v_vec, obj.TileAlignment, obj.AlignmentOffset
+        return getAlignedGridOrigin(
+            effective_face,
+            center,
+            u_vec,
+            v_vec,
+            obj.TileAlignment,
+            obj.TileLength.Value,
+            obj.TileWidth.Value,
+            obj.AlignmentOffset,
         )
-
-        if obj.TileAlignment == "Center":
-            origin_3d = origin_3d - u_vec * (obj.TileLength.Value / 2.0)
-            origin_3d = origin_3d - v_vec * (obj.TileWidth.Value / 2.0)
-
-        return origin_3d
 
     def execute(self, obj):
         """
