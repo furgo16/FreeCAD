@@ -813,6 +813,24 @@ if FreeCAD.GuiUp:
             self.btn_selection.setToolTip(
                 translate("Arch", "Enable interactive face selection in the 3D view")
             )
+
+            # Build a two-state icon: full-colour record circle when checked (picking
+            # active), auto-greyed version when unchecked. A single SVG source is enough
+            # because Qt generates the Disabled-mode pixmap automatically.
+            _rec_icon = QtGui.QIcon()
+            _px_on = QtGui.QIcon(":/icons/media-record.svg").pixmap(16, 16)
+            _px_off = QtGui.QIcon(":/icons/media-record.svg").pixmap(16, 16, QtGui.QIcon.Disabled)
+            _rec_icon.addPixmap(_px_on, QtGui.QIcon.Normal, QtGui.QIcon.On)
+            _rec_icon.addPixmap(_px_off, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+            self.btn_selection.setIcon(_rec_icon)
+
+            # Also change the button text to reinforce the state change
+            self.btn_selection.toggled.connect(
+                lambda checked: self.btn_selection.setText(
+                    translate("Arch", "Picking…") if checked else translate("Arch", "Pick")
+                )
+            )
+
             # Use the smart label helper to populate initial state
             self._updateSelectionUI()
 
