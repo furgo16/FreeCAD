@@ -1422,8 +1422,8 @@ class _ViewProviderSite:
     def updateData(self, obj, prop):
         """Method called when the host object has a property changed.
 
-        If the Longitude or Latitude has changed, set the SolarDiagram to
-        update.
+        If Longitude, Latitude or TimeZone has changed, rebuild the solar
+        diagram and update the sun position arc, sphere and ray.
 
         If Terrain or Placement has changed, move the compass to follow it.
 
@@ -1437,6 +1437,7 @@ class _ViewProviderSite:
 
         if prop in ["Longitude", "Latitude", "TimeZone"]:
             self.onChanged(obj.ViewObject, "SolarDiagram")
+            self.updateSunPosition(obj.ViewObject)
         elif prop == "Declination":
             self.onChanged(obj.ViewObject, "SolarDiagramPosition")
             self.updateTrueNorthRotation()
@@ -1805,6 +1806,9 @@ class _ViewProviderSite:
 
     def updateSunPosition(self, vobj):
         """Calculates sun position and updates the sphere, path arc, and ray object."""
+        if not hasattr(vobj, "ShowSunPosition"):
+            return
+
         import math
         import Part
         import datetime
