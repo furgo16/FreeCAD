@@ -1441,6 +1441,8 @@ class _ViewProviderSite:
         elif prop == "Declination":
             self.onChanged(obj.ViewObject, "SolarDiagramPosition")
             self.updateTrueNorthRotation()
+            if hasattr(obj.ViewObject, "ShowSunPosition"):
+                self.updateSunPosition(obj.ViewObject)
         elif prop == "Terrain":
             self.updateCompassLocation(obj.ViewObject)
         elif prop == "Placement":
