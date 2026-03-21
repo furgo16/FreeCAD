@@ -1811,6 +1811,10 @@ class _ViewProviderSite:
         from pivy import coin
 
         obj = vobj.Object
+        declination_rot = FreeCAD.Rotation(
+            FreeCAD.Vector(0, 0, 1),
+            obj.Declination.Value if hasattr(obj, "Declination") else 0.0,
+        )
 
         # During document restore the view provider may be allocated without full runtime
         # initialization (attach()/node creation). If the scenegraph nodes we need are not yet
@@ -1907,7 +1911,7 @@ class _ViewProviderSite:
                 x = math.cos(az_rad) * xy_proj
                 y = math.sin(az_rad) * xy_proj
                 z = math.sin(alt_rad) * vobj.SolarDiagramScale
-                point = FreeCAD.Vector(x, y, z)
+                point = declination_rot * FreeCAD.Vector(x, y, z)
                 if hour_float < 10:
                     morning_points.append(point)
                 elif hour_float <= 14:
@@ -1916,7 +1920,7 @@ class _ViewProviderSite:
                     afternoon_points.append(point)
                 # Check if the current time is a full hour
                 if hour_float % 1 == 0:
-                    marker_coords.append(FreeCAD.Vector(x, y, z))
+                    marker_coords.append(point)
 
                 if hasattr(vobj, "ShowHourLabels") and vobj.ShowHourLabels:
                     if vobj.ShowHourLabels and (hour_float in [9.0, 12.0, 15.0]):
@@ -1926,10 +1930,9 @@ class _ViewProviderSite:
 
                         # Create a transform to position the text slightly offset from the marker
                         text_transform = coin.SoTransform()
-                        offset_vec = FreeCAD.Vector(x, y, z).normalize() * (
-                            vobj.SolarDiagramScale * 0.03
-                        )
-                        text_pos = FreeCAD.Vector(x, y, z).add(offset_vec)
+                        direction = FreeCAD.Vector(point).normalize()
+                        offset_vec = direction * (vobj.SolarDiagramScale * 0.03)
+                        text_pos = point + offset_vec
                         text_transform.translation.setValue(text_pos.x, text_pos.y, text_pos.z)
 
                         # Add a separator for this specific label
@@ -1997,7 +2000,7 @@ class _ViewProviderSite:
         y = math.sin(azimuth_rad) * xy_proj
         z = math.sin(altitude_rad) * vobj.SolarDiagramScale
         sun_pos_3d = vobj.SolarDiagramPosition.add(
-            FreeCAD.Vector(x, y, z)
+            declination_rot * FreeCAD.Vector(x, y, z)
         )  # Final absolute position
 
         self.sunTransform.translation.setValue(sun_pos_3d.x, sun_pos_3d.y, sun_pos_3d.z)
