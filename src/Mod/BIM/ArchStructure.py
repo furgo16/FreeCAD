@@ -207,8 +207,42 @@ class CommandStructuralSystem:
                 )
 
 
+if FreeCAD.GuiUp:
+
+    class _CycleInsertionPointFilter(QtCore.QObject):
+        """Application-level Qt event filter that intercepts 'I' keypresses during
+        interactive column/beam placement to cycle the cross-section anchor point."""
+
+        def __init__(self, command):
+            super().__init__()
+            self._command = command
+
+        def eventFilter(self, watched, event):
+            if event.type() == QtCore.QEvent.KeyPress:
+                if event.text().upper() == "I":
+                    shift = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+                    self._command._cycle_insertion_point(shift)
+                    return True
+            return False
+
+
 class _CommandStructure:
     "the Arch Structure command definition"
+
+    # Nine (u, v) unit offsets for the cross-section insertion grid: center, four
+    # corners, four edge midpoints. Scale by the appropriate half-dimensions per
+    # element type. Cycling order: center first, then clockwise from bottom-right.
+    _INSERTION_POINT_OFFSETS = [
+        (0, 0),  # 0: center (default)
+        (1, -1),  # 1: bottom-right
+        (0, -1),  # 2: bottom-center
+        (-1, -1),  # 3: bottom-left
+        (-1, 0),  # 4: left-center
+        (-1, 1),  # 5: top-left
+        (0, 1),  # 6: top-center
+        (1, 1),  # 7: top-right
+        (1, 0),  # 8: right-center
+    ]
 
     def __init__(self):
 
@@ -269,6 +303,8 @@ class _CommandStructure:
         self.tracker.length(self.Length)
         self.tracker.setRotation(self.wp.get_placement().Rotation)
         self.tracker.on()
+        self._insertion_point_index = 0
+        self.last_point = None
         self.precast = ArchPrecast._PrecastTaskPanel()
         self.dents = ArchPrecast._DentsTaskPanel()
         self.precast.Dents = self.dents
@@ -283,6 +319,7 @@ class _CommandStructure:
             title=title,
         )
         FreeCADGui.draftToolBar.continueCmd.show()
+        self._install_insertion_point_filter()
 
     def getPoint(self, point=None, obj=None):
         "this function is called by the snapper when it has a 3D point"
@@ -292,6 +329,7 @@ class _CommandStructure:
             FreeCAD.activeDraftCommand = None
             FreeCADGui.Snapper.off()
             self.tracker.finalize()
+            self._remove_insertion_point_filter()
             return
         if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
@@ -319,12 +357,14 @@ class _CommandStructure:
         if self.mode == StructureMode.BEAM:
             self.Length = point.sub(self.bpoint).Length
             params.set_param_arch("BeamLength", self.Length)
+        precast_used = False  # gates insertion point adjustment in the placement section below
         if self.Profile is not None:
             try:  # try to update latest precast values - fails if dialog has been destroyed already
                 self.precastvalues = self.precast.getValues()
             except Exception:
                 pass
             if ("Precast" in self.Profile) and self.precastvalues:
+                precast_used = True
                 # precast concrete
                 self.precastvalues["PrecastType"] = self.Profile.split("_")[1]
                 self.precastvalues["Length"] = self.Length
@@ -334,12 +374,16 @@ class _CommandStructure:
                 # fix for precast placement, since their (0,0) point is the lower left corner
                 if self.mode == StructureMode.BEAM:
                     delta = FreeCAD.Vector(0, 0 - self.Width / 2, 0)
+                    delta = self.wp.get_global_coords(delta, as_vector=True)
+                    point = point.add(delta)
+                    if self.bpoint:
+                        self.bpoint = self.bpoint.add(delta)
                 else:
-                    delta = FreeCAD.Vector(-self.Length / 2, -self.Width / 2, 0)
-                delta = self.wp.get_global_coords(delta, as_vector=True)
-                point = point.add(delta)
-                if self.bpoint:
-                    self.bpoint = self.bpoint.add(delta)
+                    # Precast origin is the lower-left corner, not the center
+                    anchor_world = self._get_column_insertion_anchor_world(
+                        Vector(-self.Length / 2, -self.Width / 2, 0)
+                    )
+                    point = point.sub(anchor_world)
                 # build the string definition
                 for pair in self.precastvalues.items():
                     argstring += pair[0].lower() + "="
@@ -387,6 +431,9 @@ class _CommandStructure:
                 + ")"
             )
         else:
+            if not precast_used:
+                anchor_world = self._get_column_insertion_anchor_world()
+                point = point.sub(anchor_world)
             FreeCADGui.doCommand("s.Placement.Base = " + DraftVecUtils.toString(point))
             FreeCADGui.doCommand("wp = WorkingPlane.get_working_plane()")
             FreeCADGui.doCommand(
@@ -399,6 +446,7 @@ class _CommandStructure:
         self.doc.recompute()
         # gui_utils.end_all_events()  # Causes a crash on Linux.
         self.tracker.finalize()
+        self._remove_insertion_point_filter()
         if FreeCADGui.draftToolBar.continueMode:
             self.Activated()
 
@@ -510,6 +558,62 @@ class _CommandStructure:
                             self.vPresets.setCurrentIndex(ps.index(stored[2]))
         return w
 
+    def _get_column_insertion_anchor_local(self):
+        """Return the current insertion-point anchor as a Vector in working plane local
+        frame, relative to the box tracker center. Nine candidates on the
+        insertion (bottom) face: center, four corners, four edge midpoints."""
+        half_length = self.Length / 2
+        half_width = self.Width / 2
+        bottom_face_z = -self.Height / 2
+        u, v = self._INSERTION_POINT_OFFSETS[
+            self._insertion_point_index % len(self._INSERTION_POINT_OFFSETS)
+        ]
+        return Vector(u * half_length, v * half_width, bottom_face_z)
+
+    def _get_column_insertion_anchor_world(self, element_origin_local=None):
+        """Return the current insertion point anchor for a column as a world-space offset.
+
+        Computes the offset between the anchor and the element's geometric origin, so that
+        subtracting the result from the cursor point places the element with the anchor aligned to
+        the cursor.
+
+        Parameters
+        ----------
+        element_origin_local : FreeCAD.Vector, optional
+            The element's geometric origin in working plane local coordinates, relative to the
+            cross-section center. Defaults to the center (0, 0, 0). Pass Vector(-Length/2, -Width/2,
+            0) for precast elements, whose geometry is built from the lower-left corner rather than
+            the center.
+
+        Returns
+        -------
+        FreeCAD.Vector
+            Anchor offset in world coordinates, to be subtracted from the cursor point to align the
+            selected cross-section point with the cursor.
+        """
+        anchor_local = self._get_column_insertion_anchor_local()
+        origin_x = element_origin_local.x if element_origin_local else 0
+        origin_y = element_origin_local.y if element_origin_local else 0
+        net_offset_local = Vector(anchor_local.x - origin_x, anchor_local.y - origin_y, 0)
+        return self.wp.get_global_coords(net_offset_local, as_vector=True)
+
+    def _cycle_insertion_point(self, reverse=False):
+        """Advance (or reverse) the insertion-point index and refresh the tracker."""
+        self._insertion_point_index += -1 if reverse else 1
+        if self.last_point is not None:
+            self.update(self.last_point, None)
+
+    def _install_insertion_point_filter(self):
+        """Install the application-level keyboard filter for insertion-point cycling."""
+        self._insertion_point_filter = _CycleInsertionPointFilter(self)
+        QtGui.QApplication.instance().installEventFilter(self._insertion_point_filter)
+
+    def _remove_insertion_point_filter(self):
+        """Remove the insertion-point keyboard filter (idempotent)."""
+        if hasattr(self, "_insertion_point_filter"):
+            QtGui.QApplication.instance().removeEventFilter(self._insertion_point_filter)
+            del self._insertion_point_filter
+
     def update(self, point, info):
         "this function is called by the Snapper when the mouse is moved"
 
@@ -518,13 +622,12 @@ class _CommandStructure:
                 self.precastvalues = self.precast.getValues()
             except Exception:
                 pass
-            if self.Height >= self.Length:
-                delta = Vector(0, 0, self.Height / 2)
-            else:
-                delta = Vector(self.Length / 2, 0, 0)
-            delta = self.wp.get_global_coords(delta, as_vector=True)
-            if self.mode == StructureMode.COLUMN:
-                self.tracker.pos(point.add(delta))
+            self.last_point = point
+            if self.modec.isChecked():
+                anchor = self.wp.get_global_coords(
+                    self._get_column_insertion_anchor_local(), as_vector=True
+                )
+                self.tracker.pos(point.sub(anchor))
                 self.tracker.on()
             else:
                 if self.bpoint:
