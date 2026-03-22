@@ -342,6 +342,7 @@ class _CommandStructure:
             self.precast = ArchPrecast._PrecastTaskPanel()
             self.dents = ArchPrecast._DentsTaskPanel()
             self.precast.Dents = self.dents
+            todo.delay(self.update_hints, None)
             FreeCADGui.Snapper.getPoint(
                 last=point,
                 callback=self.getPoint,
@@ -492,6 +493,7 @@ class _CommandStructure:
         grid.addWidget(self.modeb, 1, 0, 1, 1)
         grid.addWidget(self.modec, 1, 1, 1, 1)
         self.modec.toggled.connect(lambda checked: self.update_hints())
+        self.modeb.toggled.connect(lambda checked: self.update_hints())
 
         # categories box
         labelc = QtGui.QLabel(translate("Arch", "Category"))
@@ -689,6 +691,24 @@ class _CommandStructure:
                     FreeCADGui.UserInput.KeyShift,
                 ),
             ] + xyz
+        if self.bpoint:
+            return [
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 insert beam"),
+                    FreeCADGui.UserInput.MouseLeft,
+                ),
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 next insertion point / %2+%1 previous"),
+                    FreeCADGui.UserInput.KeyI,
+                    FreeCADGui.UserInput.KeyShift,
+                ),
+            ] + xyz
+        return [
+            FreeCADGui.InputHint(
+                translate("Arch", "%1 pick first point of beam"),
+                FreeCADGui.UserInput.MouseLeft,
+            ),
+        ] + xyz
 
     def update_hints(self):
         hints = self.get_hints()
