@@ -48,6 +48,7 @@ import DraftVecUtils
 from FreeCAD import Vector
 from draftutils import params
 from draftutils import gui_utils
+from draftutils import todo
 
 
 class StructureMode(enum.Enum):
@@ -67,6 +68,7 @@ if FreeCAD.GuiUp:
     import FreeCADGui
     import ArchPrecast
     import draftguitools.gui_trackers as DraftTrackers
+    import draftguitools.gui_tool_utils as DraftToolUtils
     from draftutils.translate import translate
 else:
     # \cond
@@ -320,6 +322,7 @@ class _CommandStructure:
         )
         FreeCADGui.draftToolBar.continueCmd.show()
         self._install_insertion_point_filter()
+        todo.delay(self.update_hints, None)
 
     def getPoint(self, point=None, obj=None):
         "this function is called by the snapper when it has a 3D point"
@@ -330,6 +333,7 @@ class _CommandStructure:
             FreeCADGui.Snapper.off()
             self.tracker.finalize()
             self._remove_insertion_point_filter()
+            todo.delay(FreeCADGui.HintManager.hide, None)
             return
         if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
@@ -447,6 +451,7 @@ class _CommandStructure:
         # gui_utils.end_all_events()  # Causes a crash on Linux.
         self.tracker.finalize()
         self._remove_insertion_point_filter()
+        todo.delay(FreeCADGui.HintManager.hide, None)
         if FreeCADGui.draftToolBar.continueMode:
             self.Activated()
 
@@ -482,6 +487,7 @@ class _CommandStructure:
         grid.addWidget(labelmode, 0, 0, 1, 2)
         grid.addWidget(self.modeb, 1, 0, 1, 1)
         grid.addWidget(self.modec, 1, 1, 1, 1)
+        self.modec.toggled.connect(lambda checked: self.update_hints())
 
         # categories box
         labelc = QtGui.QLabel(translate("Arch", "Category"))
@@ -613,6 +619,32 @@ class _CommandStructure:
         if hasattr(self, "_insertion_point_filter"):
             QtGui.QApplication.instance().removeEventFilter(self._insertion_point_filter)
             del self._insertion_point_filter
+
+    def get_hints(self):
+        xyz = (
+            DraftToolUtils._get_hint_xyz_constrain()
+            + DraftToolUtils._get_hint_mod_constrain()
+            + DraftToolUtils._get_hint_mod_snap()
+        )
+        if hasattr(self, "modec") and self.modec.isChecked():
+            return [
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 insert column"),
+                    FreeCADGui.UserInput.MouseLeft,
+                ),
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 next insertion point / %2+%1 previous"),
+                    FreeCADGui.UserInput.KeyI,
+                    FreeCADGui.UserInput.KeyShift,
+                ),
+            ] + xyz
+
+    def update_hints(self):
+        hints = self.get_hints()
+        if hints:
+            FreeCADGui.HintManager.show(*hints)
+        else:
+            todo.delay(FreeCADGui.HintManager.hide, None)
 
     def update(self, point, info):
         "this function is called by the Snapper when the mouse is moved"
