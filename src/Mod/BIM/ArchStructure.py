@@ -375,15 +375,13 @@ class _CommandStructure:
                 self.precastvalues["Width"] = self.Width
                 self.precastvalues["Height"] = self.Height
                 argstring = ""
-                # fix for precast placement, since their (0,0) point is the lower left corner
-                if self.mode == StructureMode.BEAM:
-                    delta = FreeCAD.Vector(0, 0 - self.Width / 2, 0)
-                    delta = self.wp.get_global_coords(delta, as_vector=True)
-                    point = point.add(delta)
+                # Precast beams/columns have a lower-left corner origin, not center.
+                if self.modeb.isChecked():
+                    anchor_world = self._get_beam_insertion_anchor_world(self.bpoint, point)
+                    point = point.sub(anchor_world)
                     if self.bpoint:
-                        self.bpoint = self.bpoint.add(delta)
+                        self.bpoint = self.bpoint.sub(anchor_world)
                 else:
-                    # Precast origin is the lower-left corner, not the center
                     anchor_world = self._get_column_insertion_anchor_world(
                         Vector(-self.Length / 2, -self.Width / 2, 0)
                     )
@@ -424,12 +422,18 @@ class _CommandStructure:
             )
 
         # calculate rotation
-        if self.mode == StructureMode.BEAM and self.bpoint:
+        if self.modeb.isChecked() and self.bpoint:
+            beam_start = self.bpoint
+            beam_end = point
+            if not precast_used:
+                anchor_world = self._get_beam_insertion_anchor_world(beam_start, beam_end)
+                beam_start = beam_start.sub(anchor_world)
+                beam_end = beam_end.sub(anchor_world)
             FreeCADGui.doCommand(
                 "s.Placement = Arch.placeAlongEdge("
-                + DraftVecUtils.toString(self.bpoint)
+                + DraftVecUtils.toString(beam_start)
                 + ","
-                + DraftVecUtils.toString(point)
+                + DraftVecUtils.toString(beam_end)
                 + ","
                 + str(horiz)
                 + ")"
@@ -603,6 +607,53 @@ class _CommandStructure:
         net_offset_local = Vector(anchor_local.x - origin_x, anchor_local.y - origin_y, 0)
         return self.wp.get_global_coords(net_offset_local, as_vector=True)
 
+    def _get_beam_insertion_anchor_world(self, beam_start, beam_end):
+        """Return the current insertion-point anchor for a beam as a world-space offset.
+
+        The anchor lies in the cross-section plane (perpendicular to the span). The width
+        offset runs along the cross-section's horizontal axis (wp_normal x span); the height
+        offset runs along the cross-section's vertical axis (span x cross-section-horizontal).
+        Both axes tilt with the span, so the anchor stays on an actual edge or corner of the
+        cross-section for tilted beams.
+
+        Parameters
+        ----------
+        beam_start : FreeCAD.Vector
+            Start point of the beam in world coordinates.
+        beam_end : FreeCAD.Vector
+            End point of the beam in world coordinates.
+
+        Returns
+        -------
+        FreeCAD.Vector
+            Anchor offset in world coordinates, to be subtracted from beam
+            endpoints to align the selected cross-section point with the cursor.
+        """
+        span = beam_end.sub(beam_start)
+        if span.Length == 0:
+            return Vector(0, 0, 0)
+        span_dir = Vector(span)
+        span_dir.normalize()
+        cross_section_horizontal = self.wp.axis.cross(span_dir)
+        if cross_section_horizontal.Length == 0:
+            # Span parallel to WP normal: cross-section frame is degenerate.
+            return Vector(0, 0, 0)
+        cross_section_horizontal.normalize()
+        cross_section_vertical = span_dir.cross(cross_section_horizontal)
+
+        half_width = self.Width / 2
+        half_height = self.Height / 2
+        u, v = self._INSERTION_POINT_OFFSETS[
+            self._insertion_point_index % len(self._INSERTION_POINT_OFFSETS)
+        ]
+        width_offset = u * half_width
+        height_offset = v * half_height
+        return Vector(
+            width_offset * cross_section_horizontal.x + height_offset * cross_section_vertical.x,
+            width_offset * cross_section_horizontal.y + height_offset * cross_section_vertical.y,
+            width_offset * cross_section_horizontal.z + height_offset * cross_section_vertical.z,
+        )
+
     def _cycle_insertion_point(self, reverse=False):
         """Advance (or reverse) the insertion-point index and refresh the tracker."""
         self._insertion_point_index += -1 if reverse else 1
@@ -663,12 +714,23 @@ class _CommandStructure:
                 self.tracker.on()
             else:
                 if self.bpoint:
-                    delta = Vector(0, 0, -self.Height / 2)
-                    delta = self.wp.get_global_coords(delta, as_vector=True)
+                    anchor_world = self._get_beam_insertion_anchor_world(self.bpoint, point)
+                    # Tracker cube center lands at midpoint(p1,p2) + (Height/2) * wp_normal.
+                    # We want cube center = midpoint - anchor_world, so shift both endpoints
+                    # by delta = -anchor_world - (Height/2) * wp_normal.
+                    half_height_normal = Vector(self.wp.axis)
+                    half_height_normal.multiply(self.Height / 2)
+                    delta = Vector(
+                        -anchor_world.x - half_height_normal.x,
+                        -anchor_world.y - half_height_normal.y,
+                        -anchor_world.z - half_height_normal.z,
+                    )
                     self.tracker.update([self.bpoint.add(delta), point.add(delta)])
                     self.tracker.on()
-                    l = (point.sub(self.bpoint)).Length
-                    self.vLength.setText(FreeCAD.Units.Quantity(l, FreeCAD.Units.Length).UserString)
+                    beam_span = (point.sub(self.bpoint)).Length
+                    self.vLength.setText(
+                        FreeCAD.Units.Quantity(beam_span, FreeCAD.Units.Length).UserString
+                    )
                 else:
                     self.tracker.off()
 
