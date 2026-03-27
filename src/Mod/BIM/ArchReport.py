@@ -406,8 +406,7 @@ class _ArchReportDocObserver:
         # During deletion the observer may not yet be unregistered when the
         # post-removal recompute fires.
         try:
-            name = self.report.Name
-            if name not in [o.Name for o in doc.Objects]:
+            if not self.report.isAttachedToDocument():
                 FreeCAD.removeDocumentObserver(self)
                 return
         except RuntimeError:
