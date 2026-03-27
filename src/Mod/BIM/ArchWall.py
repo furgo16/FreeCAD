@@ -658,7 +658,7 @@ class _Wall(ArchComponent.Component):
                     obj.CountBroken = 0
 
         # set the length property
-        if self.connectEdges:
+        if hasattr(self, "connectEdges") and self.connectEdges:
             l = float(0)
             for e in self.connectEdges:
                 l += e.Length
