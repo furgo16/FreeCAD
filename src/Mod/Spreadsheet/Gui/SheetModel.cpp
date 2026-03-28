@@ -545,7 +545,7 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                     // v = QString::number(d);
                 }
                 else {
-                    v = QString::number(l);
+                    v = QLocale::system().toString(d, 'f', Base::UnitsApi::getDecimals());
                 }
                 return formatCellDisplay(v, cell);
             }
