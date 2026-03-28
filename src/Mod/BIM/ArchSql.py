@@ -341,16 +341,9 @@ def _get_direct_children(obj, discover_hosted_elements, include_components_from_
                     if linked:
                         element_to_check = linked
 
-                element_type = _get_bim_type(element_to_check)
-                is_confirmed_hosted = False
-                if element_type == "Window":
-                    if hasattr(element_to_check, "Hosts") and obj in element_to_check.Hosts:
-                        is_confirmed_hosted = True
-                elif element_type == "Rebar":
-                    if hasattr(element_to_check, "Host") and obj == element_to_check.Host:
-                        is_confirmed_hosted = True
-
-                if is_confirmed_hosted:
+                if hasattr(element_to_check, "Hosts") and obj in element_to_check.Hosts:
+                    children.append(element_to_check)
+                elif hasattr(element_to_check, "Host") and obj == element_to_check.Host:
                     children.append(element_to_check)
 
     # 3. Geometric components from .Additions list
