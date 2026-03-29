@@ -716,11 +716,6 @@ class _ArchReport:
             for col in range(first_col, last_col + 1):
                 saved_widths[chr(col)] = sp.getColumnWidth(chr(col))
             sp.clear(f"{used_range[0]}:{used_range[1]}")
-        else:
-            FreeCAD.Console.PrintError(
-                f"Report '{getattr(obj, 'Label', '')}': Invalid cell address found, clearing spreadsheet.\n"
-            )
-            sp.clearAll()
 
         # Reset the row counter for a new report build.
         self.spreadsheet_current_row = 1
