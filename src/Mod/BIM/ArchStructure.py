@@ -214,18 +214,6 @@ class _CommandStructure:
 
         self.mode = StructureMode.COLUMN
 
-    def GetResources(self):
-
-        return {
-            "Pixmap": "Arch_Structure",
-            "MenuText": QT_TRANSLATE_NOOP("Arch_Structure", "Structure"),
-            "Accel": "S, T",
-            "ToolTip": QT_TRANSLATE_NOOP(
-                "Arch_Structure",
-                "Creates a structure from scratch or from a selected object (sketch, wire, face or solid)",
-            ),
-        }
-
     def IsActive(self):
 
         return not FreeCAD.ActiveDocument is None
@@ -2024,14 +2012,13 @@ class _ViewProviderStructuralSystem(ArchComponent.ViewProviderComponent):
 
 
 if FreeCAD.GuiUp:
-    FreeCADGui.addCommand("Arch_Structure", _CommandStructure())
     FreeCADGui.addCommand("Arch_StructuralSystem", CommandStructuralSystem())
     FreeCADGui.addCommand("Arch_StructuresFromSelection", CommandStructuresFromSelection())
 
     class _ArchStructureGroupCommand:
 
         def GetCommands(self):
-            return ("Arch_Structure", "Arch_StructuralSystem", "Arch_StructuresFromSelection")
+            return ("Arch_StructuralSystem", "Arch_StructuresFromSelection")
 
         def GetResources(self):
             return {
