@@ -37,6 +37,7 @@ __url__ = "https://www.freecad.org"
 #  elements that have a structural function, that is, that
 #  support other parts of the building.
 
+import enum
 import FreeCAD
 import ArchComponent
 import ArchCommands
@@ -47,6 +48,18 @@ import DraftVecUtils
 from FreeCAD import Vector
 from draftutils import params
 from draftutils import gui_utils
+
+
+class StructureMode(enum.Enum):
+    """Placement mode for the interactive Structure command.
+
+    COLUMN: single-point placement, extrusion along the working plane normal.
+    BEAM:   two-point placement, extrusion along the edge between the two points.
+    """
+
+    COLUMN = "Column"
+    BEAM = "Beam"
+
 
 if FreeCAD.GuiUp:
     from PySide import QtCore, QtGui
@@ -199,7 +212,7 @@ class _CommandStructure:
 
     def __init__(self):
 
-        self.beammode = False
+        self.mode = StructureMode.COLUMN
 
     def GetResources(self):
 
@@ -221,7 +234,7 @@ class _CommandStructure:
 
         self.doc = FreeCAD.ActiveDocument
         self.Width = params.get_param_arch("StructureWidth")
-        if self.beammode:
+        if self.mode == StructureMode.BEAM:
             self.Height = params.get_param_arch("StructureLength")
             self.Length = params.get_param_arch("StructureHeight")
         else:
@@ -229,7 +242,6 @@ class _CommandStructure:
             self.Height = params.get_param_arch("StructureHeight")
         self.Profile = None
         self.bpoint = None
-        self.bmode = False
         self.precastvalues = None
         self.wp = None
         sel = FreeCADGui.Selection.getSelection()
@@ -267,7 +279,7 @@ class _CommandStructure:
         self.precast = ArchPrecast._PrecastTaskPanel()
         self.dents = ArchPrecast._DentsTaskPanel()
         self.precast.Dents = self.dents
-        if self.beammode:
+        if self.mode == StructureMode.BEAM:
             title = translate("Arch", "First Point of Beam")
         else:
             title = translate("Arch", "Base Point of Column")
@@ -282,13 +294,13 @@ class _CommandStructure:
     def getPoint(self, point=None, obj=None):
         "this function is called by the snapper when it has a 3D point"
 
-        self.bmode = self.modeb.isChecked()
+        self.mode = StructureMode.BEAM if self.modeb.isChecked() else StructureMode.COLUMN
         if point is None:
             FreeCAD.activeDraftCommand = None
             FreeCADGui.Snapper.off()
             self.tracker.finalize()
             return
-        if self.bmode and (self.bpoint is None):
+        if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
             FreeCADGui.Snapper.getPoint(
                 last=point,
@@ -306,7 +318,7 @@ class _CommandStructure:
         self.doc.openTransaction(translate("Arch", "Create Structure"))
         FreeCADGui.addModule("Arch")
         FreeCADGui.addModule("WorkingPlane")
-        if self.bmode:
+        if self.mode == StructureMode.BEAM:
             self.Length = point.sub(self.bpoint).Length
             params.set_param_arch("StructureHeight", self.Length)
         if self.Profile is not None:
@@ -322,7 +334,7 @@ class _CommandStructure:
                 self.precastvalues["Height"] = self.Height
                 argstring = ""
                 # fix for precast placement, since their (0,0) point is the lower left corner
-                if self.bmode:
+                if self.mode == StructureMode.BEAM:
                     delta = FreeCAD.Vector(0, 0 - self.Width / 2, 0)
                 else:
                     delta = FreeCAD.Vector(-self.Length / 2, -self.Width / 2, 0)
@@ -342,7 +354,7 @@ class _CommandStructure:
             else:
                 # metal profile
                 FreeCADGui.doCommand("p = Arch.makeProfile(" + str(self.Profile) + ")")
-                if self.bmode:
+                if self.mode == StructureMode.BEAM:
                     # horizontal
                     FreeCADGui.doCommand(
                         "s = Arch.makeStructure(p,length=" + str(self.Length) + ")"
@@ -353,8 +365,6 @@ class _CommandStructure:
                     FreeCADGui.doCommand(
                         "s = Arch.makeStructure(p,height=" + str(self.Height) + ")"
                     )
-                    # if not self.bmode:
-                    #    FreeCADGui.doCommand('s.Placement.Rotation = FreeCAD.Rotation(-0.5,0.5,-0.5,0.5)')
                 FreeCADGui.doCommand("s.Profile = " + repr(self.Profile[2]))
         else:
             FreeCADGui.doCommand(
@@ -368,7 +378,7 @@ class _CommandStructure:
             )
 
         # calculate rotation
-        if self.bmode and self.bpoint:
+        if self.mode == StructureMode.BEAM and self.bpoint:
             FreeCADGui.doCommand(
                 "s.Placement = Arch.placeAlongEdge("
                 + DraftVecUtils.toString(self.bpoint)
@@ -419,7 +429,7 @@ class _CommandStructure:
         labelmode = QtGui.QLabel(translate("Arch", "Parameters of the structure") + ":")
         self.modeb = QtGui.QRadioButton(translate("Arch", "Beam"))
         self.modec = QtGui.QRadioButton(translate("Arch", "Column"))
-        if self.bpoint or self.beammode:
+        if self.bpoint or self.mode == StructureMode.BEAM:
             self.modeb.setChecked(True)
         else:
             self.modec.setChecked(True)
@@ -446,7 +456,7 @@ class _CommandStructure:
         # length
         label1 = QtGui.QLabel(translate("Arch", "Length"))
         self.vLength = ui.createWidget("Gui::InputField")
-        if self.modeb.isChecked():
+        if self.mode == StructureMode.BEAM:
             self.vLength.setText(
                 FreeCAD.Units.Quantity(self.Height, FreeCAD.Units.Length).UserString
             )
@@ -467,7 +477,7 @@ class _CommandStructure:
         # height
         label3 = QtGui.QLabel(translate("Arch", "Height"))
         self.vHeight = ui.createWidget("Gui::InputField")
-        if self.modeb.isChecked():
+        if self.mode == StructureMode.BEAM:
             self.vHeight.setText(
                 FreeCAD.Units.Quantity(self.Length, FreeCAD.Units.Length).UserString
             )
@@ -529,7 +539,7 @@ class _CommandStructure:
             else:
                 delta = Vector(self.Length / 2, 0, 0)
             delta = self.wp.get_global_coords(delta, as_vector=True)
-            if self.modec.isChecked():
+            if self.mode == StructureMode.COLUMN:
                 self.tracker.pos(point.add(delta))
                 self.tracker.on()
             else:
@@ -553,7 +563,7 @@ class _CommandStructure:
 
         self.Height = d
         self.tracker.height(d)
-        if self.modeb.isChecked():
+        if self.mode == StructureMode.BEAM:
             params.set_param_arch("StructureLength", d)
         else:
             params.set_param_arch("StructureHeight", d)
@@ -562,7 +572,7 @@ class _CommandStructure:
 
         self.Length = d
         self.tracker.length(d)
-        if self.modeb.isChecked():
+        if self.mode == StructureMode.BEAM:
             params.set_param_arch("StructureHeight", d)
         else:
             params.set_param_arch("StructureLength", d)
@@ -612,14 +622,14 @@ class _CommandStructure:
                 self.Profile = elt
                 params.set_param_arch("StructurePreset", ";".join([str(i) for i in self.Profile]))
 
-    def switchLH(self, bmode):
+    def switchLH(self, beam_toggled):
 
-        if bmode:
-            self.bmode = True
+        if beam_toggled:
+            self.mode = StructureMode.BEAM
             if self.Height > self.Length:
                 self.rotateLH()
         else:
-            self.bmode = False
+            self.mode = StructureMode.COLUMN
             if self.Length > self.Height:
                 self.rotateLH()
                 self.tracker.setRotation(FreeCAD.Rotation())
