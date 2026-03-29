@@ -2135,3 +2135,21 @@ class TestArchReport(TestArchBase.TestArchBase):
             sp.set("Z1", "USER_EDIT")
             self.doc.recompute()
             self.assertEqual(sp.getContents("Z1"), "")
+
+    def test_column_widths_preserved_across_recompute(self):
+        """Column widths set by the user should survive a report recompute."""
+        report = Arch.makeReport()
+        report.Proxy.live_statements[0].query_string = "SELECT Label FROM document"
+        report.Proxy.commit_statements()
+        self.doc.recompute()
+
+        sp = report.Target
+        custom_width = 200
+        sp.setColumnWidth("A", custom_width)
+        self.doc.recompute()
+
+        self.assertEqual(
+            sp.getColumnWidth("A"),
+            custom_width,
+            "Column width should be preserved after recompute.",
+        )
