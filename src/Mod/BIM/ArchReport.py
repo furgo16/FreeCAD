@@ -696,6 +696,8 @@ class _ArchReport:
 
     def execute(self, obj):
         """Executes all statements and writes the results to the target spreadsheet."""
+        if not getattr(obj, "AutoUpdate", True):
+            return
         if not self.live_statements:
             return
 

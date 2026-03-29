@@ -2111,3 +2111,27 @@ class TestArchReport(TestArchBase.TestArchBase):
         finally:
             # CLEANUP: Always restore the user's original schema.
             FreeCAD.Units.setSchema(original_schema_index)
+
+    def test_autoupdate_controls_spreadsheet_overwrite(self):
+        """AutoUpdate=False preserves user edits on recompute;
+        AutoUpdate=True overwrites them."""
+        report = Arch.makeReport()
+        report.Proxy.live_statements[0].query_string = "SELECT Label FROM document"
+        report.Proxy.commit_statements()
+        self.doc.recompute()
+
+        sp = report.Target
+        self.assertIsNotNone(sp, "Report should have a target spreadsheet.")
+        self.assertTrue(len(sp.getUsedCells()) > 0, "Spreadsheet should have data.")
+
+        with self.subTest(AutoUpdate=False):
+            report.AutoUpdate = False
+            sp.set("Z1", "USER_EDIT")
+            self.doc.recompute()
+            self.assertIn("USER_EDIT", sp.getContents("Z1"))
+
+        with self.subTest(AutoUpdate=True):
+            report.AutoUpdate = True
+            sp.set("Z1", "USER_EDIT")
+            self.doc.recompute()
+            self.assertEqual(sp.getContents("Z1"), "")
