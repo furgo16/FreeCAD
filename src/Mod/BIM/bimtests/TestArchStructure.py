@@ -22,7 +22,6 @@
 # *                                                                         *
 # ***************************************************************************
 
-import unittest
 import FreeCAD as App
 from FreeCAD import Vector
 import Arch
@@ -221,7 +220,7 @@ class TestArchStructure(TestArchBase.TestArchBase):
         self.assertAlmostEqual(local_y.dot(local_z), 0, places=5)
 
     #  placeAlongEdge — cross-section roll
-    @unittest.expectedFailure
+
     def test_placeAlongEdge_tilted_beam_cross_section_stays_upright(self):
         """For a tilted beam, the cross-section Y axis must remain perfectly
         horizontal (zero roll).
@@ -291,3 +290,54 @@ class TestArchStructure(TestArchBase.TestArchBase):
         self.assertEqual(
             placement.Rotation.Angle, 0.0, "Zero-length edge should result in identity rotation"
         )
+
+    def test_placeAlongEdge_near_vertical_stability(self):
+        """Edge just outside the degenerate threshold should not crash and produce a valid frame."""
+        self.printTestMessage("placeAlongEdge near vertical stability")
+        start = Vector(0, 0, 0)
+        # 1e-7 is below the threshold, so this will trigger the degenerate case.
+        # Let's test just above the threshold: 1.000002e-6
+        end = Vector(1.000002e-6, 0, 1000)
+        placement = Arch.placeAlongEdge(start, end)
+        # Verify the rotation object is valid (i.e., not None or invalid)
+        self.assertIsNotNone(placement.Rotation)
+        self.assertAlmostEqual(
+            placement.Rotation.Angle, 0.0, places=1, msg="Should be nearly identity"
+        )
+
+    def test_placeAlongEdge_rotated_working_plane(self):
+        """With a rotated Working Plane, the beam still aligns to the edge and the cross-section
+        lateral axis stays in the (rotated) WP plane."""
+        self.printTestMessage("placeAlongEdge with rotated Working Plane")
+        import WorkingPlane
+
+        wp = WorkingPlane.get_working_plane()
+        # Rotate WP 45 degrees around its own normal (Z).
+        rot_45 = App.Rotation(Vector(0, 0, 1), 45)
+        wp.align_to_rotation(rot_45)
+
+        start = Vector(0, 0, 0)
+        end = Vector(1000, 0, 300)
+        placement = Arch.placeAlongEdge(start, end, horizontal=True)
+
+        # Local X must still point along the edge direction.
+        local_x = placement.Rotation.multVec(Vector(1, 0, 0))
+        edge_dir = end.sub(start)
+        edge_dir.normalize()
+        dot = local_x.dot(edge_dir)
+        self.assertAlmostEqual(
+            dot, 1, places=5, msg=f"Local X {local_x} should align with edge direction {edge_dir}"
+        )
+
+        # Local Y (cross-section lateral) should stay in the WP plane, i.e. perpendicular
+        # to the WP normal. The WP normal is still (0,0,1) since we only rotated around Z.
+        local_y = placement.Rotation.multVec(Vector(0, 1, 0))
+        self.assertAlmostEqual(
+            local_y.z,
+            0.0,
+            places=5,
+            msg=f"Cross-section Y {local_y} should lie in the WP plane (Z=0)",
+        )
+
+        # Restore default WP.
+        wp.align_to_rotation(App.Rotation())

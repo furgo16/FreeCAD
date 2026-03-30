@@ -2628,15 +2628,16 @@ def makeStructuralSystem(objects=[], axes=[], name=None):
 def placeAlongEdge(p1, p2, horizontal=False):
     """Compute a Placement that orients a beam or column along an edge.
 
-    Used for both beam and column placement. The edge direction (*p1* to *p2*) defines the element's
-    span, and a right-handed coordinate frame is constructed around it. The working plane's normal
-    is used as the "up" reference: the cross product of up with the edge direction gives the
-    cross-section's sideways axis, and a second cross product completes the frame.
+    Used for both beam and column placement at creation time. The edge direction (*p1* to *p2*)
+    defines the element's span. The orientation is built with a two-step rotation: *heading* (yaw
+    around the working plane's normal) then *inclination* (pitch around the lateral axis). The
+    cross-section profile stays upright: the lateral axis remains in the working plane throughout,
+    producing zero roll.
 
     For beams (``horizontal=True``), the local X axis is aligned with the edge direction, so the
-    element's extrusion (along X) runs from *p1* to *p2*. For columns (``horizontal=False``), the
-    frame is built with the edge direction along Z, then rotated 90 degrees so the extrusion
-    (normally along Z) ends up running along the edge.
+    element's extrusion along X runs from *p1* to *p2*. For columns (``horizontal=False``), the
+    local Z axis is aligned with the edge direction, so the element's extrusion along Z runs from
+    *p1* to *p2*.
 
     Parameters
     ----------
@@ -2646,42 +2647,58 @@ def placeAlongEdge(p1, p2, horizontal=False):
         End point of the edge. Together with *p1*, defines the element's span direction.
     horizontal : bool, optional
         If ``True``, beam-style placement: the local X axis points along the edge. If ``False``
-        (default), column-style placement: the frame is rotated 90 degrees so the local Z
-        extrusion axis ends up along the edge.
+        (default), column-style placement: the local Z axis points along the edge.
 
     Returns
     -------
     FreeCAD.Placement
         A placement at *p1* with orientation derived from the edge direction. If the edge is
-        parallel to the working plane's normal, the cross product is zero and the rotation is left
-        at identity (degenerate case).
-
-    Notes
-    -----
-    The current implementation uses a single cross-product chain to construct the frame, which can
-    produce unintuitive roll (rotation around the span axis) for non-orthogonal edge directions.
+        parallel to the working plane's normal, or if the two points are equal, the rotation is left
+        at identity (degenerate cases).
     """
-
-    import WorkingPlane
+    import math
+    from WorkingPlane import get_working_plane
 
     placement = FreeCAD.Placement()
     placement.Base = p1
+    wp = get_working_plane(update=False)
 
-    wp_normal = WorkingPlane.get_working_plane(update=False).axis
+    # Calculate the projection and lateral axis needed to define the heading and inclination.
+    up_direction = wp.axis
     edge_direction = p2.sub(p1)
-    cross_section_horizontal = wp_normal.cross(edge_direction)
 
-    if cross_section_horizontal.Length > 0:
-        cross_section_vertical = edge_direction.cross(cross_section_horizontal)
-        if horizontal:
-            placement.Rotation = FreeCAD.Rotation(
-                edge_direction, cross_section_horizontal, cross_section_vertical, "ZXY"
-            )
-        else:
-            placement.Rotation = FreeCAD.Rotation(
-                cross_section_vertical, cross_section_horizontal, edge_direction, "ZXY"
-            )
-            placement.Rotation = FreeCAD.Rotation(
-                placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1)), 90
-            ).multiply(placement.Rotation)
+    lateral_direction = up_direction.cross(edge_direction)
+    # Degenerate cases: p1 = p2 or edge parallel to WP normal — lateral axis is undefined.
+    if lateral_direction.Length < 1e-6:
+        return placement
+
+    lateral_direction.normalize()
+    edge_direction.normalize()
+
+    up_cosine = edge_direction.dot(up_direction)
+    heading_direction = edge_direction - up_direction * up_cosine
+    heading_direction.normalize()
+
+    # Heading: rotate around the working plane's normal (yaw). This aims the placement toward the
+    # edge's projection on the working plane.
+    heading_angle = math.degrees(
+        math.atan2(heading_direction.dot(wp.v), heading_direction.dot(wp.u))
+    )
+    heading_rotation = FreeCAD.Rotation(up_direction, heading_angle)
+
+    # Inclination: rotate around the lateral axis (pitch). This tilts the placement so the target
+    # axis (X for beams, Z for columns) aligns with the edge.
+    if horizontal:
+        # Beam: align local X with edge_direction.
+        # Inclination measured from the WP plane (0° = horizontal).
+        inclination = math.degrees(math.asin(max(-1, min(1, up_cosine))))
+        inclination_rotation = FreeCAD.Rotation(lateral_direction, -inclination)
+    else:
+        # Column: align local Z with edge_direction.
+        # Inclination measured from the WP normal (0° = vertical).
+        inclination = math.degrees(math.acos(max(-1, min(1, up_cosine))))
+        inclination_rotation = FreeCAD.Rotation(lateral_direction, inclination)
+
+    placement.Rotation = inclination_rotation.multiply(heading_rotation)
+
     return placement
