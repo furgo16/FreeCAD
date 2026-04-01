@@ -61,6 +61,86 @@ class StructureMode(enum.Enum):
     BEAM = "Beam"
 
 
+# Clockwise cycling order: center, then 8 perimeter points.
+_POINT_CANDIDATES = [
+    (0, 0),  # 0: Center
+    (-1, -1),  # 1: Bottom-Left
+    (-1, 0),  # 2: Left-Mid
+    (-1, 1),  # 3: Top-Left
+    (0, 1),  # 4: Top-Mid
+    (1, 1),  # 5: Top-Right
+    (1, 0),  # 6: Right-Mid
+    (1, -1),  # 7: Bottom-Right
+    (0, -1),  # 8: Bottom-Mid
+]
+
+
+def placement_rotation(mode, wp, start=None, end=None, horizontal=False):
+    """Return the world rotation for a structure placement.
+
+    Columns use the Working Plane rotation.  Beams use placeAlongEdge.
+    """
+    if mode == StructureMode.BEAM:
+        import Arch
+
+        return Arch.placeAlongEdge(start, end, horizontal=horizontal).Rotation
+    else:
+        return wp.get_placement().Rotation
+
+
+def insertion_point_offset(
+    mode, width, height, length, insertion_index, rotation, horizontal=False, shape_origin=None
+):
+    """Return the insertion point as a world-space offset from the cursor.
+
+    Computes one of nine candidate points on the cross-section (center + 4 corners +
+    4 midpoints), selected by *insertion_index*, then transforms it to world space using
+    *rotation*.  Subtract the result from the cursor point to place the element with the
+    chosen insertion point aligned to the cursor.
+
+    Parameters
+    ----------
+    mode : StructureMode
+        BEAM or COLUMN.
+    width, height, length : float
+        Object dimensions.
+    insertion_index : int
+        Index into the 9-point candidate table (wraps around).
+    rotation : FreeCAD.Rotation
+        The object's world rotation (from ``placement_rotation``).
+    horizontal : bool
+        True for beams extruded along local X (standard, precast).
+        False for beams extruded along local Z (profile) and for columns.
+    shape_origin : FreeCAD.Vector, optional
+        The shape's geometric origin in local coordinates, relative to the cross-section
+        center.  Defaults to center (0, 0, 0).  Pass e.g. Vector(0, -W/2, -H/2) for precast
+        beams whose geometry is built from the lower-left corner.
+    """
+    u, v = _POINT_CANDIDATES[insertion_index % len(_POINT_CANDIDATES)]
+
+    if mode == StructureMode.BEAM:
+        half_width = width / 2
+        half_height = height / 2
+        if horizontal:
+            # Standard/precast beam: extrusion along local X. Cross-section is YZ.
+            insertion_point = Vector(0, u * half_width, v * half_height)
+        else:
+            # Profile beam: extrusion along local Z. Cross-section is XY.
+            insertion_point = Vector(u * half_width, v * half_height, 0)
+    else:
+        # Column: cross-section is the bottom face in the XY plane.
+        half_length = length / 2
+        half_width = width / 2
+        insertion_point = Vector(u * half_length, v * half_width, -height / 2)
+
+    # Adjust for shapes whose geometric origin is not at the center
+    # (e.g. precast objects built from the lower-left corner).
+    if shape_origin:
+        insertion_point = insertion_point - shape_origin
+
+    return rotation.multVec(insertion_point)
+
+
 if FreeCAD.GuiUp:
     from PySide import QtCore, QtGui
     from PySide.QtCore import QT_TRANSLATE_NOOP
@@ -207,6 +287,25 @@ class CommandStructuralSystem:
                 )
 
 
+if FreeCAD.GuiUp:
+
+    class _CycleInsertionPointFilter(QtCore.QObject):
+        """Application-level Qt event filter that intercepts 'I' keypresses during
+        interactive column/beam placement to cycle the cross-section anchor point."""
+
+        def __init__(self, command):
+            super().__init__()
+            self._command = command
+
+        def eventFilter(self, watched, event):
+            if event.type() == QtCore.QEvent.KeyPress:
+                if event.text().upper() == "I":
+                    shift = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+                    self._command._cycle_insertion_point(shift)
+                    return True
+            return False
+
+
 class _CommandStructure:
     "the Arch Structure command definition"
 
@@ -269,6 +368,8 @@ class _CommandStructure:
         self.tracker.length(self.Length)
         self.tracker.setRotation(self.wp.get_placement().Rotation)
         self.tracker.on()
+        self._insertion_point_index = 0
+        self.last_point = None
         self.precast = ArchPrecast._PrecastTaskPanel()
         self.dents = ArchPrecast._DentsTaskPanel()
         self.precast.Dents = self.dents
@@ -283,15 +384,17 @@ class _CommandStructure:
             title=title,
         )
         FreeCADGui.draftToolBar.continueCmd.show()
+        self._install_insertion_point_filter()
 
     def getPoint(self, point=None, obj=None):
-        "this function is called by the snapper when it has a 3D point"
+        """Called by the snapper when it has a 3D point."""
 
         self.mode = StructureMode.BEAM if self.modeb.isChecked() else StructureMode.COLUMN
         if point is None:
             FreeCAD.activeDraftCommand = None
             FreeCADGui.Snapper.off()
             self.tracker.finalize()
+            self._remove_insertion_point_filter()
             return
         if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
@@ -307,35 +410,28 @@ class _CommandStructure:
         FreeCAD.activeDraftCommand = None
         FreeCADGui.Snapper.off()
         self.tracker.off()
-        horiz = True  # determines the type of rotation to apply to the final object
         self.doc.openTransaction(translate("Arch", "Create Structure"))
         FreeCADGui.addModule("Arch")
         FreeCADGui.addModule("WorkingPlane")
         if self.mode == StructureMode.BEAM:
             self.Length = point.sub(self.bpoint).Length
             params.set_param_arch("BeamLength", self.Length)
+
+        # --- Object creation (no placement logic here) ---
+        is_precast = False
+        is_profile_beam = False
         if self.Profile is not None:
             try:  # try to update latest precast values - fails if dialog has been destroyed already
                 self.precastvalues = self.precast.getValues()
             except Exception:
                 pass
             if ("Precast" in self.Profile) and self.precastvalues:
-                # precast concrete
+                is_precast = True
                 self.precastvalues["PrecastType"] = self.Profile.split("_")[1]
                 self.precastvalues["Length"] = self.Length
                 self.precastvalues["Width"] = self.Width
                 self.precastvalues["Height"] = self.Height
                 argstring = ""
-                # fix for precast placement, since their (0,0) point is the lower left corner
-                if self.mode == StructureMode.BEAM:
-                    delta = FreeCAD.Vector(0, 0 - self.Width / 2, 0)
-                else:
-                    delta = FreeCAD.Vector(-self.Length / 2, -self.Width / 2, 0)
-                delta = self.wp.get_global_coords(delta, as_vector=True)
-                point = point.add(delta)
-                if self.bpoint:
-                    self.bpoint = self.bpoint.add(delta)
-                # build the string definition
                 for pair in self.precastvalues.items():
                     argstring += pair[0].lower() + "="
                     if isinstance(pair[1], str):
@@ -346,15 +442,13 @@ class _CommandStructure:
                 FreeCADGui.doCommand("s = ArchPrecast.makePrecast(" + argstring + ")")
             else:
                 # metal profile
+                is_profile_beam = self.mode == StructureMode.BEAM
                 FreeCADGui.doCommand("p = Arch.makeProfile(" + str(self.Profile) + ")")
                 if self.mode == StructureMode.BEAM:
-                    # horizontal
                     FreeCADGui.doCommand(
                         "s = Arch.makeStructure(p,length=" + str(self.Length) + ")"
                     )
-                    horiz = False
                 else:
-                    # vertical
                     FreeCADGui.doCommand(
                         "s = Arch.makeStructure(p,height=" + str(self.Height) + ")"
                     )
@@ -370,22 +464,67 @@ class _CommandStructure:
                 + ")"
             )
 
-        # calculate rotation
+        # --- Placement (unified per mode, no subtype branching) ---
+        # Profile beams extrude along local Z; standard and precast beams along local X.
+        horizontal = (self.mode == StructureMode.BEAM) and not is_profile_beam
+        # Precast objects have their geometry origin at the lower-left corner, not center.
+        # The offset axes depend on how the shape is built:
+        #   - Precast columns: cross-section in XY → origin at (-L/2, -W/2, 0)
+        #   - Precast beams:   cross-section in YZ → origin at (0, -W/2, -H/2)
+        if is_precast:
+            if self.mode == StructureMode.BEAM:
+                shape_origin = Vector(0, -self.Width / 2, -self.Height / 2)
+            else:
+                shape_origin = Vector(-self.Length / 2, -self.Width / 2, 0)
+        else:
+            shape_origin = None
+
         if self.mode == StructureMode.BEAM and self.bpoint:
+            rotation = placement_rotation(self.mode, self.wp, self.bpoint, point, horizontal)
+            offset = insertion_point_offset(
+                self.mode,
+                self.Width,
+                self.Height,
+                self.Length,
+                self._insertion_point_index,
+                rotation,
+                horizontal,
+            )
+            start_shifted = self.bpoint - offset
+            end_shifted = point - offset
             FreeCADGui.doCommand(
                 "s.Placement = Arch.placeAlongEdge("
-                + DraftVecUtils.toString(self.bpoint)
+                + DraftVecUtils.toString(start_shifted)
                 + ","
-                + DraftVecUtils.toString(point)
+                + DraftVecUtils.toString(end_shifted)
                 + ","
-                + str(horiz)
+                + str(horizontal)
                 + ")"
             )
         else:
-            FreeCADGui.doCommand("s.Placement.Base = " + DraftVecUtils.toString(point))
-            FreeCADGui.doCommand("wp = WorkingPlane.get_working_plane()")
+            rotation = placement_rotation(self.mode, self.wp)
+            offset = insertion_point_offset(
+                self.mode,
+                self.Width,
+                self.Height,
+                self.Length,
+                self._insertion_point_index,
+                rotation,
+                shape_origin=shape_origin,
+            )
+            base = point - offset
+            FreeCADGui.doCommand("s.Placement.Base = " + DraftVecUtils.toString(base))
             FreeCADGui.doCommand(
-                "s.Placement.Rotation = s.Placement.Rotation.multiply(wp.get_placement().Rotation)"
+                "s.Placement.Rotation = "
+                + "FreeCAD.Rotation("
+                + str(rotation.Q[0])
+                + ","
+                + str(rotation.Q[1])
+                + ","
+                + str(rotation.Q[2])
+                + ","
+                + str(rotation.Q[3])
+                + ")"
             )
 
         FreeCADGui.addModule("Draft")
@@ -394,6 +533,7 @@ class _CommandStructure:
         self.doc.recompute()
         # gui_utils.end_all_events()  # Causes a crash on Linux.
         self.tracker.finalize()
+        self._remove_insertion_point_filter()
         if FreeCADGui.draftToolBar.continueMode:
             self.Activated()
 
@@ -505,32 +645,92 @@ class _CommandStructure:
                             self.vPresets.setCurrentIndex(ps.index(stored[2]))
         return w
 
-    def update(self, point, info):
-        "this function is called by the Snapper when the mouse is moved"
+    def _cycle_insertion_point(self, reverse=False):
+        """Advance (or reverse) the insertion-point index and refresh the tracker."""
+        self._insertion_point_index += -1 if reverse else 1
+        if self.last_point is not None:
+            self.update(self.last_point, None)
 
-        if FreeCADGui.Control.activeDialog():
-            try:  # try to update latest precast values - fails if dialog has been destroyed already
-                self.precastvalues = self.precast.getValues()
-            except Exception:
-                pass
-            if self.Height >= self.Length:
-                delta = Vector(0, 0, self.Height / 2)
+    def _install_insertion_point_filter(self):
+        """Install the application-level keyboard filter for insertion-point cycling."""
+        self._insertion_point_filter = _CycleInsertionPointFilter(self)
+        QtGui.QApplication.instance().installEventFilter(self._insertion_point_filter)
+
+    def _remove_insertion_point_filter(self):
+        """Remove the insertion-point keyboard filter (idempotent)."""
+        if hasattr(self, "_insertion_point_filter"):
+            QtGui.QApplication.instance().removeEventFilter(self._insertion_point_filter)
+            del self._insertion_point_filter
+
+    def update(self, point, info):
+        """Updates the preview tracker to match the calculated beam/column placement."""
+        if not FreeCADGui.Control.activeDialog():
+            return
+        self.last_point = point
+
+        if self.mode == StructureMode.COLUMN:
+            rotation = placement_rotation(self.mode, self.wp)
+            offset = insertion_point_offset(
+                self.mode,
+                self.Width,
+                self.Height,
+                self.Length,
+                self._insertion_point_index,
+                rotation,
+            )
+            self.tracker.pos(point - offset)
+            self.tracker.on()
+        else:
+            if not self.bpoint:
+                self.tracker.off()
+                return
+
+            span_vector = point - self.bpoint
+            span_length = span_vector.Length
+            if span_length < 1e-6:
+                self.tracker.off()
+                return
+
+            # Profile beams extrude along local Z; standard and precast along local X.
+            is_profile_beam = self.Profile is not None and "Precast" not in self.Profile
+            horizontal = not is_profile_beam
+
+            rotation = placement_rotation(self.mode, self.wp, self.bpoint, point, horizontal)
+            offset = insertion_point_offset(
+                self.mode,
+                self.Width,
+                self.Height,
+                self.Length,
+                self._insertion_point_index,
+                rotation,
+                horizontal,
+            )
+
+            start_shifted = self.bpoint - offset
+            end_shifted = point - offset
+            tracker_centroid = (start_shifted + end_shifted) * 0.5
+
+            self.tracker.setRotation(rotation)
+            self.tracker.pos(tracker_centroid)
+
+            if horizontal:
+                self.tracker.length(span_length)
+                self.tracker.width(self.Width)
+                self.tracker.height(self.Height)
             else:
-                delta = Vector(self.Length / 2, 0, 0)
-            delta = self.wp.get_global_coords(delta, as_vector=True)
-            if self.mode == StructureMode.COLUMN:
-                self.tracker.pos(point.add(delta))
-                self.tracker.on()
-            else:
-                if self.bpoint:
-                    delta = Vector(0, 0, -self.Height / 2)
-                    delta = self.wp.get_global_coords(delta, as_vector=True)
-                    self.tracker.update([self.bpoint.add(delta), point.add(delta)])
-                    self.tracker.on()
-                    l = (point.sub(self.bpoint)).Length
-                    self.vLength.setText(FreeCAD.Units.Quantity(l, FreeCAD.Units.Length).UserString)
-                else:
-                    self.tracker.off()
+                self.tracker.length(self.Width)
+                self.tracker.width(self.Height)
+                self.tracker.height(span_length)
+
+            self.tracker.on()
+
+            # Block signals during UI update to prevent vLength from overriding
+            # the tracker proportions via setLength().
+            self.vLength.blockSignals(True)
+            self.vLength.setText(
+                FreeCAD.Units.Quantity(span_length, FreeCAD.Units.Length).UserString
+            )
+            self.vLength.blockSignals(False)
 
     def _paramPrefix(self):
         return "Beam" if self.mode == StructureMode.BEAM else "Column"
