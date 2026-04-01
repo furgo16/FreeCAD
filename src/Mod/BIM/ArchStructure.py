@@ -155,6 +155,7 @@ if FreeCAD.GuiUp:
     import FreeCADGui
     import ArchPrecast
     import draftguitools.gui_trackers as DraftTrackers
+    import draftguitools.gui_tool_utils as DraftToolUtils
     from draftutils.translate import translate
 else:
     # \cond
@@ -394,6 +395,7 @@ class _CommandStructure:
         )
         FreeCADGui.draftToolBar.continueCmd.show()
         self._install_insertion_point_filter()
+        QtCore.QTimer.singleShot(0, self.update_hints)
 
     def get_hints(self):
         "returns status bar input hints for the current tool state"
@@ -422,6 +424,7 @@ class _CommandStructure:
             FreeCADGui.Snapper.off()
             self.tracker.finalize()
             self._remove_insertion_point_filter()
+            QtCore.QTimer.singleShot(0, FreeCADGui.HintManager.hide)
             return
         if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
@@ -430,6 +433,7 @@ class _CommandStructure:
             self.precast = ArchPrecast._PrecastTaskPanel()
             self.dents = ArchPrecast._DentsTaskPanel()
             self.precast.Dents = self.dents
+            self.update_hints()
             FreeCADGui.Snapper.getPoint(
                 last=point,
                 callback=self.getPoint,
@@ -568,6 +572,7 @@ class _CommandStructure:
         # gui_utils.end_all_events()  # Causes a crash on Linux.
         self.tracker.finalize()
         self._remove_insertion_point_filter()
+        QtCore.QTimer.singleShot(0, FreeCADGui.HintManager.hide)
         if FreeCADGui.draftToolBar.continueMode:
             self.Activated()
 
@@ -603,6 +608,8 @@ class _CommandStructure:
         grid.addWidget(labelmode, 0, 0, 1, 2)
         grid.addWidget(self.modeb, 1, 0, 1, 1)
         grid.addWidget(self.modec, 1, 1, 1, 1)
+        self.modec.toggled.connect(lambda checked: self.update_hints())
+        self.modeb.toggled.connect(lambda checked: self.update_hints())
 
         # categories box
         labelc = QtGui.QLabel(translate("Arch", "Category"))
@@ -695,6 +702,50 @@ class _CommandStructure:
         if hasattr(self, "_insertion_point_filter"):
             QtGui.QApplication.instance().removeEventFilter(self._insertion_point_filter)
             del self._insertion_point_filter
+
+    def get_hints(self):
+        xyz = (
+            DraftToolUtils._get_hint_xyz_constrain()
+            + DraftToolUtils._get_hint_mod_constrain()
+            + DraftToolUtils._get_hint_mod_snap()
+        )
+        if hasattr(self, "modec") and self.mode == StructureMode.COLUMN:
+            return [
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 insert column"),
+                    FreeCADGui.UserInput.MouseLeft,
+                ),
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 next insertion point / %2+%1 previous"),
+                    FreeCADGui.UserInput.KeyI,
+                    FreeCADGui.UserInput.KeyShift,
+                ),
+            ] + xyz
+        if self.bpoint:
+            return [
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 insert beam"),
+                    FreeCADGui.UserInput.MouseLeft,
+                ),
+                FreeCADGui.InputHint(
+                    translate("Arch", "%1 next insertion point / %2+%1 previous"),
+                    FreeCADGui.UserInput.KeyI,
+                    FreeCADGui.UserInput.KeyShift,
+                ),
+            ] + xyz
+        return [
+            FreeCADGui.InputHint(
+                translate("Arch", "%1 pick first point of beam"),
+                FreeCADGui.UserInput.MouseLeft,
+            ),
+        ] + xyz
+
+    def update_hints(self):
+        hints = self.get_hints()
+        if hints:
+            FreeCADGui.HintManager.show(*hints)
+        else:
+            QtCore.QTimer.singleShot(0, FreeCADGui.HintManager.hide)
 
     def update(self, point, info):
         """Updates the preview tracker to match the calculated beam/column placement."""
