@@ -25,6 +25,7 @@
 import FreeCAD as App
 from FreeCAD import Vector
 import Arch
+from ArchStructure import StructureMode, placement_rotation, insertion_point_offset
 from bimtests import TestArchBase
 
 
@@ -341,3 +342,246 @@ class TestArchStructure(TestArchBase.TestArchBase):
 
         # Restore default WP.
         wp.align_to_rotation(App.Rotation())
+
+    #  insertion_point_offset — column mode
+
+    def _default_wp(self):
+        import WorkingPlane
+
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_rotation(App.Rotation())
+        return wp
+
+    def test_insertion_point_offset_column_center(self):
+        """Column index 0 (Center): anchor at bottom-face center."""
+        self.printTestMessage("insertion_point_offset column center")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        anchor = insertion_point_offset(StructureMode.COLUMN, 200, 3000, 200, 0, rotation)
+        self.assertTrue(
+            anchor.isEqual(Vector(0, 0, -1500), 1e-6),
+            f"Expected (0, 0, -1500), got {anchor}",
+        )
+
+    def test_insertion_point_offset_column_bottom_left(self):
+        """Column index 1 (Bottom-Left): anchor at (-L/2, -W/2, -H/2)."""
+        self.printTestMessage("insertion_point_offset column bottom-left")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        anchor = insertion_point_offset(StructureMode.COLUMN, 200, 3000, 200, 1, rotation)
+        self.assertTrue(
+            anchor.isEqual(Vector(-100, -100, -1500), 1e-6),
+            f"Expected (-100, -100, -1500), got {anchor}",
+        )
+
+    def test_insertion_point_offset_column_top_right(self):
+        """Column index 5 (Top-Right): anchor at (L/2, W/2, -H/2)."""
+        self.printTestMessage("insertion_point_offset column top-right")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        anchor = insertion_point_offset(StructureMode.COLUMN, 200, 3000, 200, 5, rotation)
+        self.assertTrue(
+            anchor.isEqual(Vector(100, 100, -1500), 1e-6),
+            f"Expected (100, 100, -1500), got {anchor}",
+        )
+
+    def test_insertion_point_offset_column_wraps_around(self):
+        """Index 9 wraps to index 0 (Center)."""
+        self.printTestMessage("insertion_point_offset column wrap-around")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        anchor_9 = insertion_point_offset(StructureMode.COLUMN, 200, 3000, 200, 9, rotation)
+        anchor_0 = insertion_point_offset(StructureMode.COLUMN, 200, 3000, 200, 0, rotation)
+        self.assertTrue(anchor_9.isEqual(anchor_0, 1e-6), "Index 9 should wrap to 0")
+
+    def test_insertion_point_offset_column_precast_origin(self):
+        """Precast column with shape_origin shifts the anchor."""
+        self.printTestMessage("insertion_point_offset column precast origin")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        origin = Vector(-100, -100, 0)
+        anchor = insertion_point_offset(
+            StructureMode.COLUMN, 200, 3000, 200, 0, rotation, shape_origin=origin
+        )
+        # Center anchor (0, 0, -1500) minus origin (-100, -100, 0) = (100, 100, -1500)
+        self.assertTrue(
+            anchor.isEqual(Vector(100, 100, -1500), 1e-6),
+            f"Expected (100, 100, -1500), got {anchor}",
+        )
+
+    #  insertion_point_offset — horizontal beam mode
+
+    def test_insertion_point_offset_beam_horizontal_center(self):
+        """Horizontal beam index 0 (Center): anchor at cross-section center."""
+        self.printTestMessage("insertion_point_offset beam horizontal center")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 0, rotation, horizontal=True
+        )
+        self.assertTrue(
+            anchor.isEqual(Vector(0, 0, 0), 1e-6),
+            f"Expected (0, 0, 0), got {anchor}",
+        )
+
+    def test_insertion_point_offset_beam_horizontal_bottom_left(self):
+        """Horizontal beam index 1 (Bottom-Left): anchor at (0, -W/2, -H/2)."""
+        self.printTestMessage("insertion_point_offset beam horizontal bottom-left")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 1, rotation, horizontal=True
+        )
+        self.assertTrue(
+            anchor.isEqual(Vector(0, -100, -150), 1e-6),
+            f"Expected (0, -100, -150), got {anchor}",
+        )
+
+    def test_insertion_point_offset_beam_horizontal_precast_origin(self):
+        """Precast beam with shape_origin at lower-left corner of YZ cross-section."""
+        self.printTestMessage("insertion_point_offset beam horizontal precast origin")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        origin = Vector(0, -100, -150)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 0, rotation, horizontal=True, shape_origin=origin
+        )
+        # Center anchor (0, 0, 0) minus origin (0, -100, -150) = (0, 100, 150)
+        self.assertTrue(
+            anchor.isEqual(Vector(0, 100, 150), 1e-6),
+            f"Expected (0, 100, 150), got {anchor}",
+        )
+
+    #  insertion_point_offset — profile beam mode
+
+    def test_insertion_point_offset_beam_profile_center(self):
+        """Profile beam index 0 (Center): anchor at cross-section center."""
+        self.printTestMessage("insertion_point_offset beam profile center")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=False)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 0, rotation, horizontal=False
+        )
+        self.assertTrue(
+            anchor.isEqual(Vector(0, 0, 0), 1e-6),
+            f"Expected (0, 0, 0), got {anchor}",
+        )
+
+    def test_insertion_point_offset_beam_profile_bottom_left(self):
+        """Profile beam index 1 (Bottom-Left): anchor at (-W/2, -H/2, 0)."""
+        self.printTestMessage("insertion_point_offset beam profile bottom-left")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=False)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 1, rotation, horizontal=False
+        )
+        # Profile beam: cross-section in XY, so local anchor (-W/2, -H/2, 0).
+        # rotation.multVec transforms to world. For a beam along X with horizontal=False,
+        # placeAlongEdge produces a rotation that maps local Z to the beam direction.
+        local = Vector(-100, -150, 0)
+        expected = rotation.multVec(local)
+        self.assertTrue(
+            anchor.isEqual(expected, 1e-6),
+            f"Expected {expected}, got {anchor}",
+        )
+
+    #  placement_rotation
+
+    def test_placement_rotation_column_is_wp_rotation(self):
+        """Column rotation should match the Working Plane rotation."""
+        self.printTestMessage("placement_rotation column == WP rotation")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        wp_rotation = wp.get_placement().Rotation
+        self.assertTrue(rotation.isSame(wp_rotation, 1e-6))
+
+    def test_placement_rotation_beam_matches_placeAlongEdge(self):
+        """Beam rotation should match placeAlongEdge."""
+        self.printTestMessage("placement_rotation beam == placeAlongEdge")
+        wp = self._default_wp()
+        start = Vector(0, 0, 0)
+        end = Vector(1000, 0, 300)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        expected = Arch.placeAlongEdge(start, end, horizontal=True).Rotation
+        self.assertTrue(rotation.isSame(expected, 1e-6))
+
+    #  Combined insertion_point_offset for inclined and precast beams
+
+    def test_insertion_point_offset_beam_inclined_center(self):
+        """Inclined beam with center anchor: world offset should still be zero."""
+        self.printTestMessage("insertion_point_offset beam inclined center")
+        wp = self._default_wp()
+        start = Vector(0, 0, 0)
+        end = Vector(1000, 0, 500)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 0, rotation, horizontal=True
+        )
+        self.assertTrue(
+            anchor.isEqual(Vector(0, 0, 0), 1e-6),
+            f"Center anchor should be zero for inclined beam, got {anchor}",
+        )
+
+    def test_insertion_point_offset_beam_inclined_bottom_left_orthogonal(self):
+        """Inclined beam with bottom-left anchor: offset should be perpendicular to beam."""
+        self.printTestMessage("insertion_point_offset beam inclined bottom-left orthogonal")
+        wp = self._default_wp()
+        start = Vector(0, 0, 0)
+        end = Vector(1000, 0, 500)
+        beam_dir = end - start
+        beam_dir.normalize()
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        anchor = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 1, rotation, horizontal=True
+        )
+        dot = abs(anchor.dot(beam_dir))
+        self.assertAlmostEqual(
+            dot,
+            0,
+            places=5,
+            msg=f"Anchor offset {anchor} should be perpendicular to beam {beam_dir}",
+        )
+
+    def test_insertion_point_offset_precast_beam_differs_from_standard(self):
+        """Precast beam with shape_origin: offset differs from standard beam."""
+        self.printTestMessage("insertion_point_offset precast beam differs from standard")
+        wp = self._default_wp()
+        start, end = Vector(0, 0, 0), Vector(1000, 0, 0)
+        rotation = placement_rotation(StructureMode.BEAM, wp, start, end, horizontal=True)
+        standard = insertion_point_offset(
+            StructureMode.BEAM, 200, 300, 1000, 1, rotation, horizontal=True
+        )
+        precast = insertion_point_offset(
+            StructureMode.BEAM,
+            200,
+            300,
+            1000,
+            1,
+            rotation,
+            horizontal=True,
+            shape_origin=Vector(0, -100, -150),
+        )
+        self.assertFalse(
+            standard.isEqual(precast, 1e-6),
+            "Precast and standard anchors should differ",
+        )
+
+    def test_insertion_point_offset_precast_column_center(self):
+        """Precast column center anchor with lower-left origin should shift to (L/2, W/2)."""
+        self.printTestMessage("insertion_point_offset precast column center")
+        wp = self._default_wp()
+        rotation = placement_rotation(StructureMode.COLUMN, wp)
+        origin = Vector(-100, -100, 0)
+        anchor = insertion_point_offset(
+            StructureMode.COLUMN, 200, 3000, 200, 0, rotation, shape_origin=origin
+        )
+        # Center (0, 0, -1500) minus origin (-100, -100, 0) = (100, 100, -1500)
+        self.assertTrue(
+            anchor.isEqual(Vector(100, 100, -1500), 1e-6),
+            f"Expected (100, 100, -1500), got {anchor}",
+        )
