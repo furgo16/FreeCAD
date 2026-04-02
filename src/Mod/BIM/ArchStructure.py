@@ -402,6 +402,16 @@ class _CommandStructure:
         if self.mode == StructureMode.BEAM and (self.bpoint is None):
             self.bpoint = point
             self.update_hints()
+            # Block signals on widgets about to be destroyed by the Snapper replacing
+            # the extradlg. Without this, the dying combos fire signals during teardown,
+            # calling setCategory/setPreset on already-deleted widgets.
+            self.valuec.blockSignals(True)
+            self.vPresets.blockSignals(True)
+            # Recreate precast/dents panels — the old ones were passed as extradlg and
+            # will be destroyed by the Snapper when it replaces the dialog.
+            self.precast = ArchPrecast._PrecastTaskPanel()
+            self.dents = ArchPrecast._DentsTaskPanel()
+            self.precast.Dents = self.dents
             FreeCADGui.Snapper.getPoint(
                 last=point,
                 callback=self.getPoint,
