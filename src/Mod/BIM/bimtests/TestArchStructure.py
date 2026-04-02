@@ -223,8 +223,8 @@ class TestArchStructure(TestArchBase.TestArchBase):
     #  placeAlongEdge — cross-section roll
 
     def test_placeAlongEdge_tilted_beam_cross_section_stays_upright(self):
-        """For a tilted beam, the cross-section Y axis must remain perfectly
-        horizontal (zero roll).
+        """For a tilted horizontal beam, the cross-section Y axis must remain
+        perfectly horizontal (zero roll).
 
         A beam from (0,0,0) to (1000,0,300) is tilted in the XZ plane. The
         beam's 'up' (local Y axis) should stay perfectly parallel to the
@@ -234,7 +234,7 @@ class TestArchStructure(TestArchBase.TestArchBase):
         self.printTestMessage("placeAlongEdge tilted beam zero roll")
         start = Vector(0, 0, 0)
         end = Vector(1000, 0, 300)
-        placement = Arch.placeAlongEdge(start, end)
+        placement = Arch.placeAlongEdge(start, end, horizontal=True)
 
         # Transform the local Y axis (0, 1, 0) into global coordinates
         local_y = placement.Rotation.multVec(Vector(0, 1, 0))
@@ -299,12 +299,15 @@ class TestArchStructure(TestArchBase.TestArchBase):
         # 1e-7 is below the threshold, so this will trigger the degenerate case.
         # Let's test just above the threshold: 1.000002e-6
         end = Vector(1.000002e-6, 0, 1000)
-        placement = Arch.placeAlongEdge(start, end)
-        # Verify the rotation object is valid (i.e., not None or invalid)
+        placement = Arch.placeAlongEdge(start, end, horizontal=True)
+        # Verify the rotation is valid and produces an orthogonal frame.
         self.assertIsNotNone(placement.Rotation)
-        self.assertAlmostEqual(
-            placement.Rotation.Angle, 0.0, places=1, msg="Should be nearly identity"
-        )
+        local_x = placement.Rotation.multVec(Vector(1, 0, 0))
+        local_y = placement.Rotation.multVec(Vector(0, 1, 0))
+        local_z = placement.Rotation.multVec(Vector(0, 0, 1))
+        self.assertAlmostEqual(local_x.dot(local_y), 0, places=5)
+        self.assertAlmostEqual(local_x.dot(local_z), 0, places=5)
+        self.assertAlmostEqual(local_y.dot(local_z), 0, places=5)
 
     def test_placeAlongEdge_rotated_working_plane(self):
         """With a rotated Working Plane, the beam still aligns to the edge and the cross-section

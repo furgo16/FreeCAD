@@ -2701,4 +2701,12 @@ def placeAlongEdge(p1, p2, horizontal=False):
 
     placement.Rotation = inclination_rotation.multiply(heading_rotation)
 
+    if not horizontal:
+        # Profile beams have their cross-section in the XY plane (flanges along X, web along Y).
+        # The heading+inclination aligns local Z with the beam direction but leaves the flanges
+        # vertical. Roll 90° around the beam axis so the flanges are horizontal and the web
+        # vertical, matching the expected I-beam orientation.
+        roll = FreeCAD.Rotation(edge_direction, 90)
+        placement.Rotation = roll.multiply(placement.Rotation)
+
     return placement
