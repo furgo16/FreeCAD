@@ -28,6 +28,48 @@ VIEWPORT_Z_OFFSET = 0.05
 ROTATION_COVERAGE_BUFFER = 4
 
 
+def resolve_stagger(stagger_type, stagger_custom, length, joint):
+    """Return ``(cycle, offset_u)`` for the given stagger settings.
+
+    Parameters
+    ----------
+    stagger_type : str
+        One of the ``StaggerType`` enumeration strings.
+    stagger_custom : float
+        Custom offset in mm, used only when ``stagger_type == "Custom"``.
+    length : float
+        Tile length in mm (dimension along the U axis).
+    joint : float
+        Joint width in mm.
+
+    Returns
+    -------
+    tuple[int, float]
+        ``cycle`` — number of rows before the pattern repeats.
+        ``offset_u`` — row shift in mm. For preset bonds this equals an exact fraction of
+        ``length``; for Custom bonds it equals ``stagger_custom``.
+    """
+    _presets = {
+        "Half Bond (1/2)": (2, length / 2.0),
+        "Third Bond (1/3)": (3, length / 3.0),
+        "Quarter Bond (1/4)": (4, length / 4.0),
+    }
+    if stagger_type in _presets:
+        return _presets[stagger_type]
+
+    if stagger_type == "Custom":
+        period_u = length + joint
+        if period_u > 0:
+            shift_frac = (stagger_custom / period_u) % 1.0
+            if 1e-4 < shift_frac < 1 - 1e-4:
+                for n in range(2, 9):
+                    if abs((n * shift_frac) - round(n * shift_frac)) < 1e-3:
+                        return (n, stagger_custom)
+                return (8, stagger_custom)
+
+    return (1, 0.0)
+
+
 class TessellationStatus(Enum):
     OK = auto()
     JOINT_TOO_SMALL = auto()
@@ -126,31 +168,7 @@ class TileConfig:
         self.extrude = finish_mode in ("Solid Tiles", "Monolithic")
         self.monolithic = finish_mode == "Monolithic"
 
-        # Resolve the stagger enum to a concrete mm offset and cycle count.
-        # Keeping this logic here means create_tessellator and the caller both stay ignorant of the
-        # enum strings; they just see a numeric offset and a cycle count.
-        self.cycle = 1
-        _stagger_map = {
-            "Half Bond (1/2)": (length / 2.0, 2),
-            "Third Bond (1/3)": (length / 3.0, 3),
-            "Quarter Bond (1/4)": (length / 4.0, 4),
-        }
-        if stagger_type in _stagger_map:
-            self.offset_u, self.cycle = _stagger_map[stagger_type]
-        elif stagger_type == "Custom":
-            self.offset_u = stagger_custom
-            period_u = length + joint
-            if period_u > 0:
-                shift_frac = (stagger_custom / period_u) % 1.0
-                if 1e-4 < shift_frac < 1 - 1e-4:
-                    for n in range(2, 9):
-                        if abs((n * shift_frac) - round(n * shift_frac)) < 1e-3:
-                            self.cycle = n
-                            break
-                    else:
-                        self.cycle = 8 if shift_frac > 0 else 1
-        else:
-            self.offset_u = 0.0
+        self.cycle, self.offset_u = resolve_stagger(stagger_type, stagger_custom, length, joint)
 
 
 class HatchConfig:

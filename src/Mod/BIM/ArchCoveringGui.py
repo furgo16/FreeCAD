@@ -9,6 +9,7 @@ import os
 import FreeCAD
 import Arch
 import ArchCovering
+import ArchTessellation  # resolve_stagger() is there to avoid a circular import with ArchCovering
 
 if FreeCAD.GuiUp:
     from PySide import QtGui, QtCore
@@ -162,6 +163,8 @@ if FreeCAD.GuiUp:
                 "JointWidth",
                 "TileAlignment",
                 "AlignmentOffset",
+                "StaggerType",
+                "StaggerCustom",
             ]:
                 self.updateTexture(obj)
 
@@ -198,7 +201,10 @@ if FreeCAD.GuiUp:
             if not mapping:
                 return
 
-            self._attach_texture_nodes(target_node, obj.TextureImage, *mapping)
+            cycle, shift_per_row = self._resolve_stagger(obj)
+            self._attach_texture_nodes(
+                target_node, obj.TextureImage, cycle, shift_per_row, *mapping
+            )
 
         def _find_flat_root(self, vobj):
             """Return the ``FlatRoot`` SoSeparator in the view provider's scene graph, or None.
@@ -243,14 +249,16 @@ if FreeCAD.GuiUp:
 
             return bool(found_indices)
 
-        def _attach_texture_nodes(self, target_node, image_path, dir_u, dir_v, s_offset, t_offset):
+        def _attach_texture_nodes(
+            self, target_node, image_path, cycle, shift_per_row, dir_u, dir_v, s_offset, t_offset
+        ):
             """Build and insert the SoTexture2 / SoTextureCoordinatePlane / SoTexture2Transform
             triple that applies the texture image to ``target_node``.
             """
             import pivy.coin as coin
 
             texture_node = coin.SoTexture2()
-            img = self._get_cached_image(image_path)
+            img = self._get_cached_image(image_path, cycle, shift_per_row)
             if img:
                 texture_node.image = img
             else:
@@ -271,27 +279,103 @@ if FreeCAD.GuiUp:
             target_node.insertChild(texcoords, 0)
             target_node.insertChild(textrans, 0)
 
-        def _get_cached_image(self, file_path):
+        def _resolve_stagger(self, obj):
+            """Return ``(cycle, shift_per_row)`` for the object's current stagger settings.
+
+            ``shift_per_row`` is expressed as a fraction of the U period (tile length + joint).
+            Delegates to ``ArchTessellation.resolve_stagger`` for the cycle and mm offset, then
+            converts the offset to a fraction for texture image pre-baking.
             """
-            Retrieves a texture image from the cache or loads it from disk.
+            period_u = obj.TileLength.Value + obj.JointWidth.Value
+            cycle, offset_u = ArchTessellation.resolve_stagger(
+                obj.StaggerType, obj.StaggerCustom.Value, obj.TileLength.Value, obj.JointWidth.Value
+            )
+            shift_per_row = (offset_u / period_u) if period_u > 0 else 0.0
+            return (cycle, shift_per_row)
 
-            Parameters
-            ----------
-            file_path : str
-                The file system path to the image.
+        def _get_cached_image(self, file_path, cycle, shift_per_row):
+            """Return an SoSFImage for ``file_path``, optionally pre-composed to bake a stagger
+            pattern of ``cycle`` rows each shifted by ``shift_per_row`` of the image width.
 
-            Returns
-            -------
-            SoSFImage or None
-                The loaded Coin3D image object, or None if loading failed.
+            Cache entries are keyed by (path, cycle, rounded shift) so different coverings sharing a
+            texture file and bond pattern share the baked image, while dimension edits that change
+            the derived shift fraction produce a fresh entry.
             """
-            from draftutils import gui_utils
+            cache_key = (file_path, cycle, round(shift_per_row, 4))
+            cached = _ViewProviderCovering._texture_cache.get(cache_key)
+            if cached is not None:
+                return cached
 
-            img = _ViewProviderCovering._texture_cache.get(file_path)
-            if img is None:
-                img = gui_utils.load_texture(file_path)
-                if img:
-                    _ViewProviderCovering._texture_cache[file_path] = img
+            qimage = QtGui.QImage(file_path)
+            if qimage.isNull():
+                return None
+            if cycle > 1 and shift_per_row > 0:
+                qimage = self._compose_staggered_qimage(qimage, cycle, shift_per_row)
+
+            img = self._qimage_to_sosfimage(qimage)
+            if img is not None:
+                _ViewProviderCovering._texture_cache[cache_key] = img
+            return img
+
+        @staticmethod
+        def _compose_staggered_qimage(src, cycle, shift_per_row):
+            """Stack ``cycle`` copies of ``src`` vertically, shifting each by ``k * shift_per_row``
+            of the width (with horizontal wrap-around). The result is tileable in both axes and,
+            when projected with ``period_v = cycle * (tile_width + joint)``, reproduces the
+            geometric bond pattern.
+            """
+            width = src.width()
+            height = src.height()
+            composed = QtGui.QImage(width, height * cycle, src.format())
+            composed.fill(QtCore.Qt.transparent)
+
+            painter = QtGui.QPainter(composed)
+            try:
+                for k in range(cycle):
+                    shift_px = int(round(k * shift_per_row * width)) % width
+                    y = k * height
+                    painter.drawImage(shift_px, y, src)
+                    if shift_px > 0:
+                        painter.drawImage(shift_px - width, y, src)
+            finally:
+                painter.end()
+            return composed
+
+        @staticmethod
+        def _qimage_to_sosfimage(qimage):
+            """Convert a QImage to the SoSFImage format Coin3D expects.
+
+            Mirrors the conversion in ``draftutils.gui_utils.load_texture`` but takes a QImage
+            directly so callers can compose the image in Qt before handing it off to Coin.
+            """
+            import pivy.coin as coin
+
+            width = qimage.width()
+            height = qimage.height()
+            if width == 0 or height == 0:
+                return None
+
+            buffer_size = qimage.sizeInBytes()
+            components = int(buffer_size / (width * height))
+            size = coin.SbVec2s(width, height)
+
+            buf = bytearray()
+            for y in range(height):
+                for x in range(width):
+                    rgba = qimage.pixel(x, y)
+                    if components <= 2:
+                        buf.append(QtGui.qGray(rgba))
+                        if components == 2:
+                            buf.append(QtGui.qAlpha(rgba))
+                    else:
+                        buf.append(QtGui.qRed(rgba))
+                        buf.append(QtGui.qGreen(rgba))
+                        buf.append(QtGui.qBlue(rgba))
+                        if components == 4:
+                            buf.append(QtGui.qAlpha(rgba))
+
+            img = coin.SoSFImage()
+            img.setValue(size, components, bytes(buf))
             return img
 
         def _compute_texture_mapping(self, obj):
@@ -336,9 +420,12 @@ if FreeCAD.GuiUp:
             scale_u = obj.TextureScale.x if obj.TextureScale.x != 0 else 1.0
             scale_v = obj.TextureScale.y if obj.TextureScale.y != 0 else 1.0
 
-            # Period = tile + joint, so the texture repeats in sync with the tile grid.
+            # Period = tile + joint, so the texture repeats in sync with the tile grid. For
+            # non-stacked bonds the baked texture spans ``cycle`` rows, so period_v is stretched
+            # accordingly to keep one texture repeat aligned with one full stagger cycle.
+            cycle, _ = self._resolve_stagger(obj)
             period_u = (obj.TileLength.Value + joint_width) * scale_u
-            period_v = (obj.TileWidth.Value + joint_width) * scale_v
+            period_v = (obj.TileWidth.Value + joint_width) * scale_v * cycle
 
             if period_u == 0:
                 period_u = self.DEFAULT_TEXTURE_PERIOD
