@@ -399,6 +399,155 @@ class TestArchCovering(TestArchBase.TestArchBase):
             places=1,
         )
 
+    def test_setback_with_interior_holes(self):
+        """apply_setback must return a face, not a shell, when the base face has interior holes.
+
+        When BorderSetback > 0 and the base face contains inner wires (holes) that do not intersect
+        the shrunk outer boundary, the boolean cut inside apply_setback previously returned a Shell.
+        That Shell caused a crash downstream when _compute_face_areas tried to read OuterWire on it.
+        """
+        self.printTestMessage("setback with interior holes...")
+
+        # 1000x1000 face with a 200x200 hole that lies entirely inside the setback margin.
+        outer = Part.makePolygon(
+            [
+                App.Vector(0, 0, 0),
+                App.Vector(1000, 0, 0),
+                App.Vector(1000, 1000, 0),
+                App.Vector(0, 1000, 0),
+                App.Vector(0, 0, 0),
+            ],
+            True,
+        )
+        inner = Part.makePolygon(
+            [
+                App.Vector(400, 400, 0),
+                App.Vector(600, 400, 0),
+                App.Vector(600, 600, 0),
+                App.Vector(400, 600, 0),
+                App.Vector(400, 400, 0),
+            ],
+            True,
+        )
+        holed_face = Part.Face([outer, inner])
+        feature = self.document.addObject("Part::Feature", "HoledFaceSetback")
+        feature.Shape = holed_face
+        self.document.recompute()
+
+        covering = Arch.makeCovering((feature, ["Face1"]))
+        covering.FinishMode = "Monolithic"
+        covering.TileThickness = 10.0
+        covering.BorderSetback = 50.0
+        self.document.recompute()
+
+        # A shell would cause Shape to be null or raise during recompute; verify it did not.
+        self.assertFalse(covering.Shape.isNull())
+
+        # The setback reduces each edge by 50 mm: tiling area is 900x900 = 810 000 mm².
+        # The hole (200x200 = 40 000 mm²) lies inside and is preserved.
+        # NetArea = 810 000 - 40 000 = 770 000 mm².
+        self.assertAlmostEqual(covering.OuterArea.Value, 810000.0, delta=500.0)
+        self.assertEqual(len(covering.HoleAreas), 1)
+        self.assertAlmostEqual(covering.HoleAreas[0], 40000.0, delta=500.0)
+        self.assertAlmostEqual(
+            covering.OuterArea.Value,
+            covering.NetArea.Value + sum(covering.HoleAreas),
+            places=1,
+        )
+
+    def test_setback_hole_outside_shrunk_boundary(self):
+        """apply_setback must handle holes that land outside the shrunk outer boundary.
+
+        When a large setback shrinks the tiling face so that a hole wire now falls completely
+        outside the tiled region, the cut is a no-op and the shrunk face is returned as-is.
+        """
+        self.printTestMessage("setback hole outside shrunk boundary...")
+
+        outer = Part.makePolygon(
+            [
+                App.Vector(0, 0, 0),
+                App.Vector(1000, 0, 0),
+                App.Vector(1000, 1000, 0),
+                App.Vector(0, 1000, 0),
+                App.Vector(0, 0, 0),
+            ],
+            True,
+        )
+        # Hole near the corner — a large setback will push the tiling area away from it.
+        inner = Part.makePolygon(
+            [
+                App.Vector(10, 10, 0),
+                App.Vector(60, 10, 0),
+                App.Vector(60, 60, 0),
+                App.Vector(10, 60, 0),
+                App.Vector(10, 10, 0),
+            ],
+            True,
+        )
+        holed_face = Part.Face([outer, inner])
+        feature = self.document.addObject("Part::Feature", "HoledFaceCornerHole")
+        feature.Shape = holed_face
+        self.document.recompute()
+
+        covering = Arch.makeCovering((feature, ["Face1"]))
+        covering.FinishMode = "Monolithic"
+        covering.TileThickness = 10.0
+        # Setback of 100 mm moves tiling area to [100,900]x[100,900]; hole is at [10,60]x[10,60],
+        # entirely outside the shrunk region.
+        covering.BorderSetback = 100.0
+        self.document.recompute()
+
+        # Should not crash; tiling area is 800x800 = 640 000 mm² with no preserved hole.
+        self.assertFalse(covering.Shape.isNull())
+        self.assertAlmostEqual(covering.OuterArea.Value, 640000.0, delta=500.0)
+
+    def test_setback_returns_face_not_shell(self):
+        """apply_setback must return a Face (not a Shell) so OuterWire is accessible.
+
+        Directly exercises the fixed code path: a face with an interior hole processed through
+        apply_setback with a positive setback value.
+        """
+        self.printTestMessage("setback returns face not shell...")
+
+        outer = Part.makePlane(1000, 1000)
+        hole = Part.makePlane(200, 200, App.Vector(400, 400, 0))
+        face_with_hole = outer.cut(hole).Faces[0]
+
+        result = ArchCovering.apply_setback(face_with_hole, 50.0)
+
+        self.assertEqual(result.ShapeType, "Face", "apply_setback must return a Face, not a Shell.")
+        self.assertTrue(hasattr(result, "OuterWire"))
+        # Shrunk outer: 900x900 = 810 000. Hole 200x200 = 40 000. Net = 770 000.
+        self.assertAlmostEqual(result.Area, 770000.0, delta=1.0)
+
+    def test_setback_collapse_fallback(self):
+        """apply_setback returns the original face when the setback is larger than the face."""
+        self.printTestMessage("setback collapse fallback...")
+
+        face = Part.makePlane(100, 100)
+        result = ArchCovering.apply_setback(face, 60.0)
+
+        self.assertFalse(result.isNull())
+        self.assertAlmostEqual(
+            result.Area, 10000.0, delta=0.1, msg="Should fall back to the original face."
+        )
+
+    def test_setback_hole_partially_outside_shrunk_boundary(self):
+        """apply_setback cuts only the portion of a hole that overlaps the shrunk tiling area."""
+        self.printTestMessage("setback hole partially outside shrunk boundary...")
+
+        outer = Part.makePlane(1000, 1000)
+        # Hole at (10,10)-(110,110); straddles the 100mm setback boundary.
+        hole = Part.makePlane(100, 100, App.Vector(10, 10, 0))
+        face_with_hole = outer.cut(hole).Faces[0]
+
+        # 100mm setback: shrunk outer is (100,100)-(900,900), area = 640 000.
+        # Overlap of hole with shrunk region: (100,100)-(110,110) = 10x10 = 100 mm².
+        result = ArchCovering.apply_setback(face_with_hole, 100.0)
+
+        self.assertIsInstance(result, Part.Face)
+        self.assertAlmostEqual(result.Area, 639900.0, delta=1.0)
+
     def test_quantities_clamped_waste(self):
         """Verify that WasteArea is clamped to 0 when GrossArea < NetArea."""
         self.printTestMessage("quantities clamped waste...")

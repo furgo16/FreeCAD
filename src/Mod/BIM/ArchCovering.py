@@ -676,11 +676,20 @@ def apply_setback(base_face, border_setback):
     # Copy before modifying so the passed face is not modified.
     tiling_face = base_face.copy()
 
-    # Shrink the outer boundary
-    shrunk_outer_face = Part.Face(tiling_face.OuterWire).makeOffset2D(-border_setback)
+    # Shrink the outer boundary. makeOffset2D raises when the setback is too large to leave any
+    # area; the null/zero-area check below catches any remaining degenerate cases.
+    _setback_too_large = translate(
+        "Arch", "BorderSetback is too large and collapses the face. Setback ignored."
+    )
+    try:
+        shrunk_outer_face = Part.Face(tiling_face.OuterWire).makeOffset2D(-border_setback)
+    except Exception:
+        FreeCAD.Console.PrintWarning(_setback_too_large + "\n")
+        return base_face
 
     # The setback is larger than the face; fall back to the original.
     if shrunk_outer_face.isNull() or shrunk_outer_face.Area <= 0:
+        FreeCAD.Console.PrintWarning(_setback_too_large + "\n")
         return base_face
 
     # Extract inner wires (holes)
@@ -698,9 +707,22 @@ def apply_setback(base_face, border_setback):
         try:
             hole_face = Part.Face(wire)
             if not hole_face.isNull():
-                # The boolean cut handles cases where the hole intersects the perimeter or
-                # falls completely outside it.
-                shrunk_face = shrunk_face.cut(hole_face)
+                # The boolean cut handles cases where the hole intersects the perimeter or falls
+                # completely outside it.
+                cut_result = shrunk_face.cut(hole_face)
+
+                if cut_result.Faces:
+                    shrunk_face = cut_result.Faces[0]
+                else:
+                    # This specific hole consumed the whole face. Warn and keep the face from the
+                    # previous iteration.
+                    FreeCAD.Console.PrintWarning(
+                        translate(
+                            "Arch",
+                            "A hole is larger than the shrunken area. Skipping this hole.",
+                        )
+                        + "\n"
+                    )
         except Exception as e:
             FreeCAD.Console.PrintMessage(
                 f"ArchCovering: skipping problematic hole during setback: {e}\n"
