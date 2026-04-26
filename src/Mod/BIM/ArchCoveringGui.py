@@ -518,6 +518,28 @@ if FreeCAD.GuiUp:
         GEO_PAGE_MONOLITHIC = 2
         # Combo-box index for the Hatch Pattern finish mode.
         FINISH_MODE_HATCH = 3
+        # Textual values for enum-based comboboxes. Translated in the UI, saved in English in
+        # the property values
+        MODE_VALUES = [
+            QT_TRANSLATE_NOOP("Arch", "Solid Tiles"),
+            QT_TRANSLATE_NOOP("Arch", "Parametric Pattern"),
+            QT_TRANSLATE_NOOP("Arch", "Monolithic"),
+            QT_TRANSLATE_NOOP("Arch", "Hatch Pattern"),
+        ]
+        ALIGN_VALUES = [
+            QT_TRANSLATE_NOOP("Arch", "Center"),
+            QT_TRANSLATE_NOOP("Arch", "Top Left"),
+            QT_TRANSLATE_NOOP("Arch", "Top Right"),
+            QT_TRANSLATE_NOOP("Arch", "Bottom Left"),
+            QT_TRANSLATE_NOOP("Arch", "Bottom Right"),
+        ]
+        STAGGER_VALUES = [
+            QT_TRANSLATE_NOOP("Arch", "Stacked (None)"),
+            QT_TRANSLATE_NOOP("Arch", "Half Bond (1/2)"),
+            QT_TRANSLATE_NOOP("Arch", "Third Bond (1/3)"),
+            QT_TRANSLATE_NOOP("Arch", "Quarter Bond (1/4)"),
+            QT_TRANSLATE_NOOP("Arch", "Custom"),
+        ]
 
         class _PickShortcutFilter(QtCore.QObject):
             """
@@ -758,14 +780,7 @@ if FreeCAD.GuiUp:
 
             # Mode
             self.combo_mode = QtGui.QComboBox()
-            self.combo_mode.addItems(
-                [
-                    translate("Arch", "Solid Tiles"),
-                    translate("Arch", "Parametric Pattern"),
-                    translate("Arch", "Monolithic"),
-                    translate("Arch", "Hatch Pattern"),
-                ]
-            )
+            self.combo_mode.addItems([translate("Arch", v) for v in self.MODE_VALUES])
             self.combo_mode.setToolTip(
                 translate(
                     "Arch",
@@ -776,7 +791,7 @@ if FreeCAD.GuiUp:
                     "- Hatch Pattern: Technical drafting symbols (hatching) on a single slab.",
                 )
             )
-            self.combo_mode.setCurrentText(self.template.buffer.FinishMode)
+            self.combo_mode.setCurrentIndex(self.MODE_VALUES.index(self.template.buffer.FinishMode))
             self.combo_mode.currentIndexChanged.connect(self.onModeChanged)
             top_form.addRow(translate("Arch", "Mode"), self.combo_mode)
 
@@ -831,9 +846,7 @@ if FreeCAD.GuiUp:
                 )
             )
             self.combo_align = QtGui.QComboBox()
-            self.combo_align.addItems(
-                ["Center", "Top Left", "Top Right", "Bottom Left", "Bottom Right"]
-            )
+            self.combo_align.addItems([translate("Arch", v) for v in self.ALIGN_VALUES])
             self.combo_align.setToolTip(
                 translate(
                     "Arch",
@@ -997,15 +1010,7 @@ if FreeCAD.GuiUp:
             # Stagger
             h_stagger = QtGui.QHBoxLayout()
             self.combo_stagger = QtGui.QComboBox()
-            self.combo_stagger.addItems(
-                [
-                    translate("Arch", "Stacked (None)"),
-                    translate("Arch", "Half Bond (1/2)"),
-                    translate("Arch", "Third Bond (1/3)"),
-                    translate("Arch", "Quarter Bond (1/4)"),
-                    translate("Arch", "Custom"),
-                ]
-            )
+            self.combo_stagger.addItems([translate("Arch", v) for v in self.STAGGER_VALUES])
             self.combo_stagger.setToolTip(
                 translate(
                     "Arch",
@@ -1114,8 +1119,7 @@ if FreeCAD.GuiUp:
 
         def _loadExistingData(self):
             # Sync the combobox and force the stacked widget to the correct page
-            mode = self.template.buffer.FinishMode
-            self.combo_mode.setCurrentText(mode)
+            self.combo_mode.setCurrentIndex(self.MODE_VALUES.index(self.template.buffer.FinishMode))
             self.onModeChanged(self.combo_mode.currentIndex())
 
             # Initialize radio button state based on the current alignment mode
@@ -1124,7 +1128,9 @@ if FreeCAD.GuiUp:
             self.radio_preset.setChecked(not is_custom)
 
             if not is_custom:
-                self.combo_align.setCurrentText(self.template.buffer.TileAlignment)
+                self.combo_align.setCurrentIndex(
+                    self.ALIGN_VALUES.index(self.template.buffer.TileAlignment)
+                )
             self._on_alignment_mode_changed(not is_custom)
 
             # Load hatch pattern data
@@ -1140,7 +1146,9 @@ if FreeCAD.GuiUp:
             self.sb_scale_hatch.setValue(self.template.buffer.PatternScale)
 
             # Stagger data
-            self.combo_stagger.setCurrentText(self.template.buffer.StaggerType)
+            self.combo_stagger.setCurrentIndex(
+                self.STAGGER_VALUES.index(self.template.buffer.StaggerType)
+            )
             # Trigger handler to update enabled state of custom box
             self.onStaggerChanged(self.combo_stagger.currentIndex())
 
@@ -1191,11 +1199,11 @@ if FreeCAD.GuiUp:
             # Disable visuals (textures) only for Hatch Pattern
             self.vis_widget.setEnabled(index != self.FINISH_MODE_HATCH)
 
-            self.template.buffer.FinishMode = self.combo_mode.currentText()
+            self.template.buffer.FinishMode = self.MODE_VALUES[self.combo_mode.currentIndex()]
 
         def onStaggerChanged(self, _index):
             """Enables or disables the custom stagger input based on selection."""
-            is_custom = self.combo_stagger.currentText() == "Custom"
+            is_custom = self.STAGGER_VALUES[self.combo_stagger.currentIndex()] == "Custom"
             self.sb_stagger_custom.setEnabled(is_custom)
 
         def _get_view_direction(self):
@@ -1658,11 +1666,11 @@ if FreeCAD.GuiUp:
             obj.Rotation = self.sb_rot.property("value")
 
             # Sync enum properties
-            obj.FinishMode = self.combo_mode.currentText()
+            obj.FinishMode = self.MODE_VALUES[self.combo_mode.currentIndex()]
             if self.radio_custom.isChecked():
                 obj.TileAlignment = "Custom"
             else:
-                obj.TileAlignment = self.combo_align.currentText()
+                obj.TileAlignment = self.ALIGN_VALUES[self.combo_align.currentIndex()]
 
             # Preserve any dot-path expressions (e.g. "AlignmentOffset.x") that ExpressionBinding
             # wrote to the buffer when the user entered them via the f(x) button. Writing a plain
@@ -1705,7 +1713,7 @@ if FreeCAD.GuiUp:
                 self.sb_tex_scale_u.value(), self.sb_tex_scale_v.value(), 0
             )
 
-            obj.StaggerType = self.combo_stagger.currentText()
+            obj.StaggerType = self.STAGGER_VALUES[self.combo_stagger.currentIndex()]
             obj.StaggerCustom = self.sb_stagger_custom.property("value")
 
             obj.BorderSetback = self.sb_setback.property("value")
