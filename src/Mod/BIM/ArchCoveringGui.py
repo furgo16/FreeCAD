@@ -1571,7 +1571,7 @@ if FreeCAD.GuiUp:
 
             # Restore the UI and object state.
             self.geo_widget.setEnabled(True)
-            self.vis_widget.setEnabled(True)
+            self.vis_widget.setEnabled(self.combo_mode.currentIndex() != self.FINISH_MODE_HATCH)
             if self.obj_to_edit:
                 if hasattr(self, "_old_transparency"):
                     self.obj_to_edit.ViewObject.Transparency = self._old_transparency
