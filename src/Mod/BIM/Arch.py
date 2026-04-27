@@ -2626,17 +2626,15 @@ def makeStructuralSystem(objects=[], axes=[], name=None):
 
 
 def placeAlongEdge(p1, p2, horizontal=False, wp=None):
-    """Compute a Placement that orients a beam or column along an edge.
+    """Compute a Placement that orients a structural element along an edge.
 
-    Used for both beam and column placement. The edge direction (*p1* to *p2*) defines the element's
-    span, and a right-handed coordinate frame is constructed around it. The working plane's normal
-    is used as the "up" reference: the cross product of up with the edge direction gives the
-    cross-section's sideways axis, and a second cross product completes the frame.
+    Structural elements are built by extruding a cross-section face along a local axis. The edge
+    direction (p1 to p2) defines that extrusion span, and the working plane's normal is used as the
+    "up" reference to keep the cross-section upright.
 
-    For beams (``horizontal=True``), the local X axis is aligned with the edge direction, so the
-    element's extrusion (along X) runs from *p1* to *p2*. For columns (``horizontal=False``), the
-    frame is built with the edge direction along Z, then rotated 90 degrees so the extrusion
-    (normally along Z) ends up running along the edge.
+    For elements that extrude along local X (``horizontal=True``), the local X axis is aligned with
+    the edge direction so the extrusion runs from *p1* to *p2*. For elements that extrude along
+    local Z (``horizontal=False``), the local Z axis is aligned with the edge direction.
 
     Parameters
     ----------
@@ -2645,9 +2643,8 @@ def placeAlongEdge(p1, p2, horizontal=False, wp=None):
     p2 : FreeCAD.Vector
         End point of the edge. Together with *p1*, defines the element's span direction.
     horizontal : bool, optional
-        If ``True``, beam-style placement: the local X axis points along the edge. If ``False``
-        (default), column-style placement: the frame is rotated 90 degrees so the local Z
-        extrusion axis ends up along the edge.
+        If ``True``, extrudes along local X (cross-section in the local YZ plane. If ``False``
+        (default), extrudes along local Z (cross-section in the local XY plane).
     wp : WorkingPlane.PlaneBase, optional
         Working plane whose normal is used as the "up" reference. Defaults to the active working
         plane.
@@ -2656,13 +2653,8 @@ def placeAlongEdge(p1, p2, horizontal=False, wp=None):
     -------
     FreeCAD.Placement
         A placement at *p1* with orientation derived from the edge direction. If the edge is
-        parallel to the working plane's normal, the cross product is zero and the rotation is left
-        at identity (degenerate case).
-
-    Notes
-    -----
-    The current implementation uses a single cross-product chain to construct the frame, which can
-    produce unintuitive roll (rotation around the span axis) for non-orthogonal edge directions.
+        zero-length or parallel to the working plane's normal, the cross product is zero and the
+        rotation is left at identity (degenerate case).
     """
 
     import WorkingPlane
@@ -2682,9 +2674,6 @@ def placeAlongEdge(p1, p2, horizontal=False, wp=None):
             )
         else:
             placement.Rotation = FreeCAD.Rotation(
-                cross_section_vertical, cross_section_horizontal, edge_direction, "ZXY"
+                cross_section_horizontal, cross_section_vertical, edge_direction, "ZXY"
             )
-            placement.Rotation = FreeCAD.Rotation(
-                placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1)), 90
-            ).multiply(placement.Rotation)
     return placement
