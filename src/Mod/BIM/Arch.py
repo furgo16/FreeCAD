@@ -2625,7 +2625,7 @@ def makeStructuralSystem(objects=[], axes=[], name=None):
         return structural_systems
 
 
-def placeAlongEdge(p1, p2, horizontal=False):
+def placeAlongEdge(p1, p2, horizontal=False, wp=None):
     """Compute a Placement that orients a beam or column along an edge.
 
     Used for both beam and column placement. The edge direction (*p1* to *p2*) defines the element's
@@ -2648,6 +2648,9 @@ def placeAlongEdge(p1, p2, horizontal=False):
         If ``True``, beam-style placement: the local X axis points along the edge. If ``False``
         (default), column-style placement: the frame is rotated 90 degrees so the local Z
         extrusion axis ends up along the edge.
+    wp : WorkingPlane.PlaneBase, optional
+        Working plane whose normal is used as the "up" reference. Defaults to the active working
+        plane.
 
     Returns
     -------
@@ -2667,7 +2670,7 @@ def placeAlongEdge(p1, p2, horizontal=False):
     placement = FreeCAD.Placement()
     placement.Base = p1
 
-    wp_normal = WorkingPlane.get_working_plane(update=False).axis
+    wp_normal = (wp or WorkingPlane.get_working_plane(update=False)).axis
     edge_direction = p2.sub(p1)
     cross_section_horizontal = wp_normal.cross(edge_direction)
 
