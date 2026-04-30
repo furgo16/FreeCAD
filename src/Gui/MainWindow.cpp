@@ -432,6 +432,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     // the rightmost permanent widget.
     auto* toggleBottomPanelsButton = new QToolButton(statusBar());
     toggleBottomPanelsButton->setObjectName(QStringLiteral("toggleBottomPanelsButton"));
+    //: A context menu action used to show or hide the Toggle Bottom Panels button in the status bar
+    toggleBottomPanelsButton->setWindowTitle(tr("Toggle Bottom Panels"));
     int iconSize = App::GetApplication()
                        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
                        ->GetInt("ToolbarIconSize", 24);
