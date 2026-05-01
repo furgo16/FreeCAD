@@ -530,6 +530,15 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
 
     setupDockWindows();
 
+    for (auto* panel : findChildren<QDockWidget*>()) {
+        connect(panel, &QDockWidget::visibilityChanged, this, [this](bool) {
+            syncBottomPanelsButtonState(this);
+        });
+        connect(panel, &QDockWidget::dockLocationChanged, this, [this](Qt::DockWidgetArea) {
+            syncBottomPanelsButtonState(this);
+        });
+    }
+
     // accept drops on the window, get handled in dropEvent, dragEnterEvent
     setAcceptDrops(true);
 
