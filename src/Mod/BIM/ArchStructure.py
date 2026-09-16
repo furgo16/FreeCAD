@@ -92,6 +92,17 @@ def placement_rotation(mode, wp, start=None, end=None, horizontal=False):
         return wp.get_placement().Rotation
 
 
+def _is_profile_beam(mode, profile, precastvalues):
+    """Return True for a metal/structural profile beam.
+
+    False for columns, for a plain box (no profile selected), and for precast
+    elements, which use their own geometry rather than a profile extrusion.
+    """
+    if mode != StructureMode.BEAM or profile is None:
+        return False
+    return not (("Precast" in profile) and precastvalues)
+
+
 def insertion_point_offset(
     mode, width, height, length, insertion_index, rotation, horizontal=False, shape_origin=None
 ):
@@ -479,7 +490,7 @@ class _CommandStructure:
                 FreeCADGui.doCommand("s = ArchPrecast.makePrecast(" + argstring + ")")
             else:
                 # metal profile
-                is_profile_beam = self.mode == StructureMode.BEAM
+                is_profile_beam = _is_profile_beam(self.mode, self.Profile, self.precastvalues)
                 FreeCADGui.doCommand("p = Arch.makeProfile(" + str(self.Profile) + ")")
                 if self.mode == StructureMode.BEAM:
                     FreeCADGui.doCommand(
@@ -775,7 +786,7 @@ class _CommandStructure:
                 return
 
             # Profile beams extrude along local Z; standard and precast along local X.
-            is_profile_beam = self.Profile is not None and "Precast" not in self.Profile
+            is_profile_beam = _is_profile_beam(self.mode, self.Profile, self.precastvalues)
             horizontal = not is_profile_beam
 
             rotation = placement_rotation(self.mode, self.wp, self.bpoint, point, horizontal)
