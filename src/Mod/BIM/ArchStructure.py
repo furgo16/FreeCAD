@@ -369,7 +369,7 @@ class _CommandStructure:
                 argstring = ""
                 # fix for precast placement, since their (0,0) point is the lower left corner
                 if self.mode == StructureMode.BEAM:
-                    delta = FreeCAD.Vector(0, 0 - self.Width / 2, 0)
+                    delta = FreeCAD.Vector(0, -self.Width / 2, -self.Height / 2)
                 else:
                     delta = FreeCAD.Vector(-self.Length / 2, -self.Width / 2, 0)
                 delta = self.wp.get_global_coords(delta, as_vector=True)
