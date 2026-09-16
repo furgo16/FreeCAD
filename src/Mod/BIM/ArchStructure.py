@@ -762,6 +762,11 @@ class _CommandStructure:
             return
         self.last_point = point
 
+        try:  # try to update latest precast values - fails if dialog has been destroyed already
+            self.precastvalues = self.precast.getValues()
+        except Exception:
+            pass
+
         if self.mode == StructureMode.COLUMN:
             rotation = placement_rotation(self.mode, self.wp)
             offset = insertion_point_offset(
