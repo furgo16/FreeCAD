@@ -561,17 +561,9 @@ class _CommandStructure:
             )
             base = point - offset
             FreeCADGui.doCommand("s.Placement.Base = " + DraftVecUtils.toString(base))
+            FreeCADGui.doCommand("wp = WorkingPlane.get_working_plane()")
             FreeCADGui.doCommand(
-                "s.Placement.Rotation = "
-                + "FreeCAD.Rotation("
-                + str(rotation.Q[0])
-                + ","
-                + str(rotation.Q[1])
-                + ","
-                + str(rotation.Q[2])
-                + ","
-                + str(rotation.Q[3])
-                + ")"
+                "s.Placement.Rotation = s.Placement.Rotation.multiply(wp.get_placement().Rotation)"
             )
 
         FreeCADGui.addModule("Draft")
