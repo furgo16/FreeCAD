@@ -92,6 +92,11 @@ def placement_rotation(mode, wp, start=None, end=None, horizontal=False):
         return wp.get_placement().Rotation
 
 
+def _is_precast(profile, precastvalues):
+    """Return True if the current profile selection is a configured precast element."""
+    return profile is not None and ("Precast" in profile) and bool(precastvalues)
+
+
 def _is_profile_beam(mode, profile, precastvalues):
     """Return True for a metal/structural profile beam.
 
@@ -100,7 +105,7 @@ def _is_profile_beam(mode, profile, precastvalues):
     """
     if mode != StructureMode.BEAM or profile is None:
         return False
-    return not (("Precast" in profile) and precastvalues)
+    return not _is_precast(profile, precastvalues)
 
 
 def insertion_point_offset(
@@ -473,7 +478,7 @@ class _CommandStructure:
                 self.precastvalues = self.precast.getValues()
             except Exception:
                 pass
-            if ("Precast" in self.Profile) and self.precastvalues:
+            if _is_precast(self.Profile, self.precastvalues):
                 is_precast = True
                 self.precastvalues["PrecastType"] = self.Profile.split("_")[1]
                 self.precastvalues["Length"] = self.Length
@@ -760,6 +765,9 @@ class _CommandStructure:
             pass
 
         if self.mode == StructureMode.COLUMN:
+            # Precast columns have their geometry origin at the lower-left corner, not center
+            is_precast = _is_precast(self.Profile, self.precastvalues)
+            shape_origin = Vector(-self.Length / 2, -self.Width / 2, 0) if is_precast else None
             rotation = placement_rotation(self.mode, self.wp)
             offset = insertion_point_offset(
                 self.mode,
@@ -768,6 +776,7 @@ class _CommandStructure:
                 self.Length,
                 self._insertion_point_index,
                 rotation,
+                shape_origin=shape_origin,
             )
             self.tracker.pos(point - offset)
             self.tracker.on()
