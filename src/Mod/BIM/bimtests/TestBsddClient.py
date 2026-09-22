@@ -366,6 +366,14 @@ class TestBsddClient(unittest.TestCase):
         failures = []
         event_loop = QtCore.QEventLoop()
 
+        def on_dictionaries_ready(_payload):
+            ifc_uri = client.resolve_dictionary_uri(BimBsdd.BSDD_IFC_DICTIONARY_CODE)
+            if ifc_uri is None:
+                failures.append("IFC dictionary not found in dictionary registry")
+                event_loop.quit()
+                return
+            client.search_concepts("wall", active_dictionaries=[ifc_uri])
+
         def on_search_ready(search_key, payload):
             received["search_key"] = search_key
             received["payload"] = payload
@@ -404,16 +412,13 @@ class TestBsddClient(unittest.TestCase):
             lambda: (failures.append("Timed out waiting for live bSDD response"), event_loop.quit())
         )
 
+        client.dictionariesReady.connect(on_dictionaries_ready)
         client.searchReady.connect(on_search_ready)
         client.conceptReady.connect(on_concept_ready)
         client.requestFailed.connect(on_failure)
 
         timeout.start(30000)
-        client.search_concepts(
-            "wall",
-            active_dictionaries=[BimBsdd.BSDD_IFC_DICTIONARY_URI],
-            related_ifc_entity="IfcWall",
-        )
+        client.fetch_dictionaries()
         event_loop.exec_()
         timeout.stop()
 

@@ -32,9 +32,13 @@ BSDD_PREVIEW_KEY = "BsddLoadPreviewDomains"
 BSDD_TEST_KEY = "BsddLoadTestDomains"
 BSDD_INACTIVE_KEY = "BsddLoadInactiveDomains"
 BSDD_API_URL_KEY = "BsddApiBaseUrl"
-BSDD_IFC_DICTIONARY_URI = "https://identifier.buildingsmart.org/uri/buildingsmart/ifc/latest"
+# Dictionary URIs are version-specific and change on every IFC release. Look up the
+# current one with resolve_dictionary_uri(BSDD_IFC_DICTIONARY_CODE) instead of
+# hardcoding a URI.
+BSDD_IFC_DICTIONARY_CODE = "ifc"
 _DOMAIN_CACHE_KEY = "__domains__"
 _BSDD_CLIENT = None
+_MAX_RATE_LIMIT_RETRIES = 3
 
 
 class BsddSettings:
@@ -96,6 +100,20 @@ class BsddNetworkClient(QtCore.QObject):
             query_items=self._status_query_items(),
         )
 
+    def resolve_dictionary_uri(self, dictionary_code):
+        """Returns the current concrete URI for a dictionary code (e.g. "ifc"),
+        or None if the dictionary registry hasn't been cached yet. Callers that
+        get None should call fetch_dictionaries() and connect to
+        dictionariesReady, then call this again once it fires.
+        """
+        cached = self.domain_cache.get(self._dictionary_cache_key())
+        if not cached:
+            return None
+        for entry in cached.get("dictionaries") or []:
+            if entry.get("code") == dictionary_code:
+                return entry.get("uri")
+        return None
+
     def search_concepts(self, query_text, active_dictionaries=None, related_ifc_entity=""):
         """Retrieves filtered search results."""
         self.refresh_settings()
@@ -150,11 +168,13 @@ class BsddNetworkClient(QtCore.QObject):
             ("IncludeInactive", self._bool_string(self.settings.include_inactive)),
         ]
 
-    def _submit_json_request(self, request_kind, cache_key, endpoint, query_items):
+    def _submit_json_request(self, request_kind, cache_key, endpoint, query_items, retry_count=0):
         request = self._build_request(endpoint, query_items)
         reply = self._network_manager.get(request)
         reply.finished.connect(
-            lambda rk=request_kind, ck=cache_key, rp=reply: self._process_reply(rk, ck, rp)
+            lambda rk=request_kind, ck=cache_key, rp=reply, ep=endpoint, qi=query_items, rc=retry_count: self._process_reply(
+                rk, ck, rp, ep, qi, rc
+            )
         )
 
     def _build_request(self, endpoint, query_items):
@@ -170,9 +190,24 @@ class BsddNetworkClient(QtCore.QObject):
         request.setRawHeader(b"X-User-Agent", user_agent)
         return request
 
-    def _process_reply(self, request_kind, cache_key, reply):
+    def _process_reply(
+        self, request_kind, cache_key, reply, endpoint=None, query_items=None, retry_count=0
+    ):
         try:
             if reply.error() != QtNetwork.QNetworkReply.NoError:
+                status = None
+                if hasattr(reply, "attribute"):
+                    status = reply.attribute(QtNetwork.QNetworkRequest.HttpStatusCodeAttribute)
+                if status == 429 and endpoint is not None and retry_count < _MAX_RATE_LIMIT_RETRIES:
+                    retry_after = bytes(reply.rawHeader("Retry-After")).decode("utf-8", "ignore")
+                    delay_seconds = int(retry_after) if retry_after.isdigit() else 1
+                    QtCore.QTimer.singleShot(
+                        delay_seconds * 1000,
+                        lambda: self._submit_json_request(
+                            request_kind, cache_key, endpoint, query_items, retry_count + 1
+                        ),
+                    )
+                    return
                 if request_kind in ["concept_base", "concept_properties"]:
                     self._pending_concept_payloads.pop(cache_key, None)
                 self.requestFailed.emit(request_kind, reply.errorString(), cache_key)
