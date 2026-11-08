@@ -586,6 +586,24 @@ class _ViewProviderSpace(ArchComponent.ViewProviderComponent):
                 locked=True,
             )
             vobj.TextColor = (0.0, 0.0, 0.0, 1.0)
+        if not "TextBackgroundColor" in pl:
+            vobj.addProperty(
+                "App::PropertyColor",
+                "TextBackgroundColor",
+                "Space",
+                QT_TRANSLATE_NOOP("App::Property", "The color of the text background"),
+                locked=True,
+            )
+            vobj.TextBackgroundColor = (1.0, 1.0, 1.0, 1.0)
+        if not "TextBackgroundTransparency" in pl:
+            vobj.addProperty(
+                "App::PropertyPercent",
+                "TextBackgroundTransparency",
+                "Space",
+                QT_TRANSLATE_NOOP("App::Property", "The transparency of the text background"),
+                locked=True,
+            )
+            vobj.TextBackgroundTransparency = 100
         if not "FontSize" in pl:
             vobj.addProperty(
                 "App::PropertyLength",
@@ -691,7 +709,17 @@ class _ViewProviderSpace(ArchComponent.ViewProviderComponent):
         self.label = coin.SoSwitch()
         sep = coin.SoSeparator()
         self.label.whichChild = 0
+
+        self.bg_color = coin.SoMaterial()
+        self.bg_coords = coin.SoCoordinate3()
+        self.bg_faceset = coin.SoIndexedFaceSet()
+        self.bg_sep = coin.SoSeparator()
+        self.bg_sep.addChild(self.bg_color)
+        self.bg_sep.addChild(self.bg_coords)
+        self.bg_sep.addChild(self.bg_faceset)
+
         sep.addChild(self.coords)
+        sep.addChild(self.bg_sep)
         sep.addChild(self.color)
         sep.addChild(self.font)
         sep.addChild(self.text2)
@@ -742,6 +770,62 @@ class _ViewProviderSpace(ArchComponent.ViewProviderComponent):
         # placement's displacement will be already added by the coin node
         pos = vobj.Object.Placement.inverse().multVec(pos)
         return pos
+
+    def _getTextExtents(self):
+        """Calculates and returns the Coin3D text extents for background mask generation."""
+        from pivy import coin
+
+        viewport_region = coin.SbViewportRegion()
+        bbox_action = coin.SoGetBoundingBoxAction(viewport_region)
+
+        text_group = coin.SoSeparator()
+        text_group.ref()
+        text_group.addChild(self.font)
+        text_group.addChild(self.text2)
+        text_group.addChild(self.header)
+        text_group.addChild(self.text1)
+
+        bbox_action.apply(text_group)
+        text_extents = bbox_action.getBoundingBox()
+        text_group.unref()
+
+        if text_extents.isEmpty():
+            return None
+        return text_extents
+
+    def updateBackground(self, vobj):
+        """Updates the background mask geometry and visual properties based on text extents."""
+        if not hasattr(self, "bg_coords") or not hasattr(vobj, "TextBackgroundTransparency"):
+            return
+
+        if vobj.TextBackgroundTransparency >= 100:
+            self.bg_faceset.coordIndex.deleteValues(0)
+            return
+
+        text_extents = self._getTextExtents()
+        if not text_extents:
+            self.bg_faceset.coordIndex.deleteValues(0)
+            return
+
+        min_v = text_extents.getMin()
+        max_v = text_extents.getMax()
+
+        pad = vobj.FontSize.Value * 0.2 if hasattr(vobj, "FontSize") else 0.0
+
+        xmin = min_v[0] - pad
+        ymin = min_v[1] - pad
+        xmax = max_v[0] + pad
+        ymax = max_v[1] + pad
+        z = -0.005  # Offset slightly behind text to prevent z-fighting
+
+        self.bg_coords.point.setValues(
+            0, 4, [[xmin, ymin, z], [xmax, ymin, z], [xmax, ymax, z], [xmin, ymax, z]]
+        )
+        self.bg_faceset.coordIndex.setValues(0, 5, [0, 1, 2, 3, -1])
+
+        bg_color = vobj.TextBackgroundColor
+        self.bg_color.diffuseColor.setValue(bg_color[0], bg_color[1], bg_color[2])
+        self.bg_color.transparency.setValue(vobj.TextBackgroundTransparency / 100.0)
 
     def onChanged(self, vobj, prop):
 
@@ -871,6 +955,20 @@ class _ViewProviderSpace(ArchComponent.ViewProviderComponent):
         elif prop == "Transparency":
             if hasattr(vobj, "DisplayMode"):
                 vobj.DisplayMode = "Wireframe" if vobj.Transparency == 100 else "Flat Lines"
+
+        if prop in [
+            "Text",
+            "Decimals",
+            "ShowUnit",
+            "FontName",
+            "FontSize",
+            "FirstLine",
+            "LineSpacing",
+            "TextAlign",
+            "TextBackgroundColor",
+            "TextBackgroundTransparency",
+        ]:
+            self.updateBackground(vobj)
 
     def setEdit(self, vobj, mode):
         if mode != 0:
